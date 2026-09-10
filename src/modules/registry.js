@@ -10,6 +10,7 @@ import { runFaceVerification, FACE_PROVIDERS } from './face/index.js';
 import { validateDocument } from './validation/index.js';
 import { computeRisk } from './risk/index.js';
 import { fuseEvidence } from './fusion/index.js';
+import { runWatchlistCheck, WATCHLIST_PROVIDERS } from './watchlist/index.js';
 import { isFirebaseConfigured } from '../lib/firebase.js';
 
 function pick(envValue, available, fallback) {
@@ -22,16 +23,18 @@ export function getProviderConfig() {
   let ocr = pick(env.VITE_OCR_PROVIDER, OCR_PROVIDERS, 'tesseract');
   let tamper = pick(env.VITE_TAMPER_PROVIDER, TAMPER_PROVIDERS, 'local');
   const face = pick(env.VITE_FACE_PROVIDER, FACE_PROVIDERS, 'faceapi');
+  const watchlist = pick(env.VITE_WATCHLIST_PROVIDER, WATCHLIST_PROVIDERS, 'demo');
   // Cloud providers need Firebase; degrade gracefully to the in-browser equivalents.
   if (ocr === 'cloud' && !isFirebaseConfigured) ocr = 'tesseract';
   if (tamper === 'cloud' && !isFirebaseConfigured) tamper = 'local';
-  return { ocr, tamper, face };
+  return { ocr, tamper, face, watchlist };
 }
 
 /** Provider overrides selected in the UI (e.g. "Use mock data" toggle for demos). */
 export function resolveProviders(overrides = {}) {
   const base = getProviderConfig();
-  if (overrides.useMock) return { ocr: 'mock', tamper: 'mock', face: 'mock' };
+  // The mock toggle replaces the analysis modules; watchlist screening keeps its configured provider.
+  if (overrides.useMock) return { ocr: 'mock', tamper: 'mock', face: 'mock', watchlist: overrides.providers?.watchlist || base.watchlist };
   const { useMock, scenario, providers, ...rest } = overrides; // eslint-disable-line no-unused-vars
   const merged = { ...base, ...(providers || {}), ...rest };
   if (merged.ocr === 'cloud' && !isFirebaseConfigured) merged.ocr = 'tesseract';
@@ -54,6 +57,11 @@ export const PROVIDER_OPTIONS = {
     { value: 'faceapi', label: 'face-api.js (on device)', hint: 'SSD MobileNet + 128-d descriptors' },
     { value: 'mock', label: 'Mock data', hint: 'Demo only' },
   ],
+  watchlist: [
+    { value: 'demo', label: 'Synthetic demo watchlist', hint: 'Local test records only — not a government database' },
+    { value: 'api', label: 'Authorised external service', hint: 'Not configured in this prototype; reports unavailable', cloud: true },
+    { value: 'off', label: 'Disabled', hint: 'Reports unavailable evidence' },
+  ],
 };
 
 export const modules = {
@@ -61,6 +69,8 @@ export const modules = {
   validation: validateDocument,
   tampering: runTamperingDetection,
   face: runFaceVerification,
+  /** Watchlist screening over extracted identifiers (demo | api | off). */
+  watchlist: runWatchlistCheck,
   /** Evidence fusion: correlation, risk + confidence, four-way decision (used by the pipeline). */
   fusion: fuseEvidence,
   /** Legacy weighted-sum risk engine, kept for interpreting older records; not called by the pipeline. */

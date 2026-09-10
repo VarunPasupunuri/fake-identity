@@ -1,7 +1,7 @@
 /**
  * Screening orchestrator (framework-free).
  *
- *   OCR → Validation → Tampering ∥ Face → Evidence Fusion → Risk + Confidence → Decision
+ *   OCR → Validation → Tampering ∥ Face ∥ Watchlist → Evidence Fusion → Risk + Confidence → Decision
  *
  * The React hook (hooks/useScreeningPipeline.js) is a thin state wrapper around
  * runScreening(); keeping the flow here makes it testable without a browser.
@@ -14,12 +14,13 @@
 import { modules as defaultModules, resolveProviders } from '../modules/registry.js';
 import { toLegacyRisk } from '../modules/fusion/index.js';
 
-export const STEP_IDS = ['ocr', 'validation', 'tampering', 'face', 'risk'];
+export const STEP_IDS = ['ocr', 'validation', 'tampering', 'face', 'watchlist', 'risk'];
 export const STEP_META = {
   ocr: { label: 'OCR extraction', description: 'Reading printed text and MRZ' },
   validation: { label: 'Document validation', description: 'Format rules, expiry, MRZ checksums' },
   tampering: { label: 'Tampering detection', description: 'Error level analysis and metadata' },
   face: { label: 'Face verification', description: 'Comparing live photo with document photo' },
+  watchlist: { label: 'Watchlist screening', description: 'Checking extracted identifiers against the configured list' },
   risk: { label: 'Evidence fusion & risk', description: 'Correlating signals, scoring risk and confidence, deciding' },
 };
 
@@ -70,15 +71,18 @@ export async function runScreening({ documentType, documentImage, documentFile, 
     return mods.validation(documentType, out.ocr);
   });
 
-  // Tampering and face verification are independent — run them concurrently.
-  const [tampering, face] = await Promise.all([
+  // Tampering, face verification and watchlist screening are independent — run them concurrently.
+  const [tampering, face, watchlist] = await Promise.all([
     runStep('tampering', () => mods.tampering({ provider: providers.tamper, imageDataUrl: documentImage, originalFile: documentFile, documentType, scenario, onProgress: progress('tampering') })),
     liveImage
       ? runStep('face', () => mods.face({ provider: providers.face, documentImageDataUrl: documentImage, liveImageDataUrl: liveImage, scenario, onProgress: progress('face') }))
       : Promise.resolve(null).then(() => { out.steps.face = { status: 'skipped', durationMs: 0 }; onUpdate('face', { status: 'skipped', progress: 100, message: 'Skipped — no live photo' }); return null; }),
+    runStep('watchlist', () => mods.watchlist({ provider: providers.watchlist, fields: out.ocr?.fields || {}, documentType, onProgress: progress('watchlist') })),
   ]);
   out.tampering = tampering;
   out.face = face;
+  // A provider that threw is null → fusion records the watchlist check as unavailable evidence.
+  out.watchlist = watchlist;
   if (isCancelled()) return null;
 
   // Evidence fusion: never throws on missing inputs — absent modules become `unavailable` evidence.
@@ -86,7 +90,7 @@ export async function runScreening({ documentType, documentImage, documentFile, 
     const p = progress('risk');
     p(0.2, 'Normalising evidence');
     p(0.5, 'Correlating signals');
-    const fusion = mods.fusion({ documentType, ocr: out.ocr, validation: out.validation, tampering: out.tampering, face: out.face, providers });
+    const fusion = mods.fusion({ documentType, ocr: out.ocr, validation: out.validation, tampering: out.tampering, face: out.face, watchlist: out.watchlist, providers });
     p(0.9, 'Scoring risk and confidence');
     return fusion;
   });

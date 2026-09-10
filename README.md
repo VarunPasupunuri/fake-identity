@@ -128,6 +128,8 @@ src/
     validation/       mrz.js (ICAO 9303 TD1/TD2/TD3 + check digits), rules.js, index.js
     tampering/        mock | local (canvas ELA + exifr) | cloud   + ela.js, metadata.js
     face/             mock | faceapi
+    watchlist/        demo (synthetic test records) | api (authorised service placeholder → unavailable) | off
+    fusion/           evidence normalisation, correlations, risk + confidence, four-way decision, chain, counterfactual
     risk/             weighted score + factor breakdown
   hooks/useScreeningPipeline.js   ← orchestrates modules, exposes per-step progress
   services/           auth.js, screenings.js (Firestore with demo-mode fallback), storage.js (Supabase Storage: upload / signed URLs / delete), demoStore.js
@@ -139,6 +141,10 @@ scripts/set-user-claims.mjs   set Firebase custom claims (role=authenticated, ap
 supabase/storage-policies.sql private bucket + RLS policies for screenings/{officerUid}/{screeningId}/…
 firestore.rules       officers append-only to their own screenings; admins read everything; no deletes
 ```
+
+### Watchlist screening (prototype)
+
+Extracted identifiers (document number, name, date of birth, nationality) are screened by a `WatchlistProvider`. The prototype ships only a **synthetic demo list** (`src/modules/watchlist/demoWatchlist.js`: invented names, `ZZ…` document numbers, ICAO's fictional `UTO`/`XXX` codes). It is **not connected to any government, police, immigration or Interpol database** and never claims to be. Matching is conservative: a document-number match needs a corroborating attribute to count as `confirmed_match`; name-only similarity is at most a weak `possible_match` that asks for officer review. `api` is a placeholder for an authorised external service and reports `unavailable` until one is integrated; `off` disables the check. Unavailable results become zero-risk *unavailable* evidence in fusion.
 
 ### Screening flow
 

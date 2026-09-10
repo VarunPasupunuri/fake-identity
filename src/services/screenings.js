@@ -52,7 +52,7 @@ export async function uploadScreeningImages({ uid, screeningId, documentImage, l
  * Persist a completed screening (module outputs) — decision may be added later.
  * @returns {Promise<string>} screening id
  */
-export async function createScreening({ user, documentType, images, ocr, validation, tampering, face, risk, fusion, providers, durationMs, onWarning }) {
+export async function createScreening({ user, documentType, images, ocr, validation, tampering, face, watchlist, risk, fusion, providers, durationMs, onWarning }) {
   const id = newId();
   const stored = await uploadScreeningImages({ uid: user.uid, screeningId: id, documentImage: images.document, liveImage: images.live });
   if (stored.warning) onWarning?.(stored.warning);
@@ -80,6 +80,8 @@ export async function createScreening({ user, documentType, images, ocr, validat
     validation,
     tampering: tampering ? stripUndefined({ ...tampering, evidence: { ...tampering.evidence, elaImage: imageStorage !== 'inline' && tampering.evidence?.elaImage && tampering.evidence.elaImage.length < 300000 ? tampering.evidence.elaImage : null } }) : null,
     face: face ? stripUndefined(face) : null,
+    // Watchlist screening result (null on records created before the module existed).
+    watchlist: watchlist ? stripUndefined(watchlist) : null,
     risk: risk || null,
     // Evidence fusion output (evidence items, correlations, confidence, four-way decision, chain, counterfactual).
     fusion: fusion ? stripUndefined(fusion) : null,

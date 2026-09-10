@@ -24,7 +24,7 @@
  * @property {import('../types.js').TamperResult|null} tampering
  * @property {import('../types.js').FaceResult|null} face
  * @property {{ type: string, confidence: number, provider?: string, overridden?: boolean }} [classification]
- * @property {{ status: 'clear'|'match'|'possible'|'unavailable', matches?: Object[], source?: string }} [watchlist]
+ * @property {{ status: 'clear'|'match'|'possible'|'unavailable'|'confirmed_match'|'possible_match', matches?: Object[], source?: string, confidence?: number, explanation?: string, fieldsUsed?: string[], synthetic?: boolean }} [watchlist]
  * @property {{ status?: 'ok'|'unavailable', links?: Object[] }} [identity]
  * @property {{ ocr?: string, tamper?: string, face?: string }} [providers]
  */

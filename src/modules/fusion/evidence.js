@@ -182,9 +182,29 @@ export function evidenceFromOptional({ classification, watchlist, identity }) {
     items.push({ id: 'classification:type', source: SOURCE.CLASSIFICATION, category: 'classification', status: conf >= 0.6 ? STATUS.INFO : STATUS.WARN, severity: conf >= 0.6 ? SEVERITY.NONE : SEVERITY.LOW, label: `Document type ${classification.type}`, value: { type: classification.type, confidence: conf, overridden: Boolean(classification.overridden) }, explanation: conf >= 0.6 ? `Document classified as ${classification.type} (${Math.round(conf * 100)}%).` : `Document type ${classification.type} detected with low confidence (${Math.round(conf * 100)}%).`, riskContribution: conf >= 0.6 ? 0 : RISK.classification.lowConfidence, confidence: conf, rule: classification.provider });
   }
   if (watchlist) {
-    const st = watchlist.status;
-    if (st === 'unavailable' || !st) items.push({ id: 'watchlist:unavailable', source: SOURCE.WATCHLIST, category: 'watchlist', status: STATUS.UNAVAILABLE, severity: SEVERITY.NONE, label: 'Watchlist unavailable', value: null, explanation: 'Watchlist check unavailable.', riskContribution: 0, confidence: null, rule: watchlist.source });
-    else items.push({ id: 'watchlist:result', source: SOURCE.WATCHLIST, category: 'watchlist', status: st === 'clear' ? STATUS.PASS : st === 'match' ? STATUS.FAIL : STATUS.WARN, severity: st === 'clear' ? SEVERITY.NONE : st === 'match' ? SEVERITY.CRITICAL : SEVERITY.MEDIUM, label: st === 'clear' ? 'Watchlist clear' : st === 'match' ? 'Watchlist match' : 'Possible watchlist match', value: { status: st, matches: watchlist.matches || [], source: watchlist.source || null }, explanation: st === 'clear' ? `No watchlist match (${watchlist.source || 'source unspecified'}).` : st === 'match' ? `Document or identity matches a watchlist entry (${watchlist.source || 'source unspecified'}).` : `Potential watchlist match requires officer review (${watchlist.source || 'source unspecified'}).`, riskContribution: st === 'match' ? RISK.watchlist.match : st === 'possible' ? RISK.watchlist.possible : 0, confidence: null, rule: watchlist.source });
+    // Accept both the fusion contract (clear|match|possible|unavailable) and the watchlist module's
+    // vocabulary (clear|confirmed_match|possible_match|unavailable).
+    const st = { confirmed_match: 'match', possible_match: 'possible' }[watchlist.status] || watchlist.status;
+    const src = watchlist.source || 'source unspecified';
+    const top = (watchlist.matches || [])[0] || null;
+    const conf = typeof watchlist.confidence === 'number' ? watchlist.confidence : top?.confidence ?? null;
+    if (st === 'unavailable' || !st) items.push({ id: 'watchlist:unavailable', source: SOURCE.WATCHLIST, category: 'watchlist', status: STATUS.UNAVAILABLE, severity: SEVERITY.NONE, label: 'Watchlist unavailable', value: { source: src, provider: watchlist.provider || null }, explanation: watchlist.explanation || 'Watchlist check unavailable.', riskContribution: 0, confidence: null, rule: watchlist.provider || watchlist.source });
+    else {
+      const weak = st === 'possible' && conf !== null && conf < RISK.watchlist.weakBelow;
+      items.push({
+        id: 'watchlist:result',
+        source: SOURCE.WATCHLIST,
+        category: 'watchlist',
+        status: st === 'clear' ? STATUS.PASS : st === 'match' ? STATUS.FAIL : STATUS.WARN,
+        severity: st === 'clear' ? SEVERITY.NONE : st === 'match' ? SEVERITY.CRITICAL : weak ? SEVERITY.LOW : SEVERITY.MEDIUM,
+        label: st === 'clear' ? 'Watchlist clear' : st === 'match' ? `Watchlist match${top?.matchType ? ` (${String(top.matchType).replace('_', ' ')})` : ''}` : `Possible watchlist match${top?.matchType ? ` (${String(top.matchType).replace('_', ' ')})` : ''}`,
+        value: { status: st, matches: watchlist.matches || [], source: src, confidence: conf, fieldsUsed: watchlist.fieldsUsed || [], synthetic: Boolean(watchlist.synthetic), matchType: top?.matchType || null, recordId: top?.recordId || null },
+        explanation: watchlist.explanation || (st === 'clear' ? `No watchlist match (${src}).` : st === 'match' ? `Document or identity matches a watchlist entry (${src}).` : `Potential watchlist match requires officer review (${src}).`),
+        riskContribution: st === 'match' ? RISK.watchlist.match : st === 'possible' ? (weak ? RISK.watchlist.weakPossible : RISK.watchlist.possible) : 0,
+        confidence: conf,
+        rule: watchlist.provider || src,
+      });
+    }
   }
   if (identity) {
     const links = identity.links || [];

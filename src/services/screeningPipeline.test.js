@@ -111,6 +111,33 @@ describe('screening pipeline → evidence fusion integration', () => {
     for (const id of STEP_IDS) expect(rec.events.some((e) => e.id === id && e.status === 'running')).toBe(true);
   });
 
+  it('runs the watchlist step in parallel and feeds its result to fusion; record carries it', async () => {
+    const rec = recorder();
+    const out = await runScreening({ documentType: 'passport', documentImage: IMG, liveImage: IMG, options: { ...MOCK } }, { onUpdate: rec.onUpdate, log: () => {} });
+    expect(STEP_IDS).toContain('watchlist');
+    expect(rec.steps.watchlist.status).toBe('done');
+    expect(out.watchlist).toMatchObject({ provider: 'demo', status: 'clear', synthetic: true });
+    expect(out.watchlist.fieldsUsed).toEqual(expect.arrayContaining(['documentNumber', 'fullName']));
+    expect(out.fusion.evidence.find((e) => e.id === 'watchlist:result')).toMatchObject({ status: 'pass', riskContribution: 0 });
+    expect(out.providers.watchlist).toBe('demo');
+  });
+
+  it('watchlist provider failure → error step, unavailable evidence, decision unchanged in kind', async () => {
+    const rec = recorder();
+    const failing = { ...modules, watchlist: async () => { throw new Error('watchlist service timeout'); } };
+    const out = await runScreening({ documentType: 'passport', documentImage: IMG, liveImage: IMG, options: { ...MOCK } }, { modules: failing, onUpdate: rec.onUpdate, log: () => {} });
+    expect(rec.steps.watchlist.status).toBe('error');
+    expect(out.watchlist).toBeNull();
+    expect(out.fusion.evidence.some((e) => e.source === 'watchlist')).toBe(false); // null input → nothing fabricated
+    expect(out.fusion.decision).toBe(DECISION.APPROVE);
+  });
+
+  it('watchlist "off" provider reports unavailable evidence with zero risk', async () => {
+    const out = await runScreening({ documentType: 'passport', documentImage: IMG, liveImage: IMG, options: { ...MOCK, providers: { watchlist: 'off' } } }, { log: () => {} });
+    expect(out.watchlist.status).toBe('unavailable');
+    expect(out.fusion.evidence.find((e) => e.id === 'watchlist:unavailable')).toMatchObject({ status: 'unavailable', riskContribution: 0 });
+  });
+
   it('honours cancellation between stages', async () => {
     let calls = 0;
     const out = await runScreening({ documentType: 'passport', documentImage: IMG, liveImage: IMG, options: { ...MOCK } }, { isCancelled: () => ++calls >= 1, log: () => {} });
@@ -120,7 +147,7 @@ describe('screening pipeline → evidence fusion integration', () => {
   it('never fabricates evidence: only sources that ran appear', async () => {
     const out = await runScreening({ documentType: 'driving_license', documentImage: IMG, liveImage: null, options: { ...MOCK } }, { log: () => {} });
     const sources = new Set(out.fusion.evidence.map((e) => e.source));
-    expect([...sources].sort()).toEqual(['face', 'ocr', 'tampering', 'validation']);
-    expect(out.fusion.evidence.some((e) => e.source === 'watchlist' || e.source === 'identity')).toBe(false);
+    expect([...sources].sort()).toEqual(['face', 'ocr', 'tampering', 'validation', 'watchlist']);
+    expect(out.fusion.evidence.some((e) => e.source === 'identity' || e.source === 'classification')).toBe(false);
   });
 });

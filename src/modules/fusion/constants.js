@@ -49,7 +49,7 @@ export const RISK = Object.freeze({
   face: { cap: 35, noMatch: 10 },
   ocr: { lowConfidence: 6 },
   // Optional future modules (contract only — no provider implemented yet)
-  watchlist: { match: 30, possible: 15 },
+  watchlist: { match: 30, possible: 15, weakPossible: 5, weakBelow: 0.5 }, // possible hits below `weakBelow` confidence (name-only) count as weak
   identity: { link: 10 },
   classification: { lowConfidence: 4 },
   // Cross-module correlations (bounded so a correlation can raise but never dominate the score)

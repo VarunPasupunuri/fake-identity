@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { ScanText, ListChecks, ShieldAlert, ScanFace, Gauge } from 'lucide-react';
+import { ScanText, ListChecks, ShieldAlert, ScanFace, ScanSearch, Gauge } from 'lucide-react';
 import { STEP_IDS, STEP_META } from '../../hooks/useScreeningPipeline.js';
 import { StatusIcon, ProgressBar } from '../ui/index.jsx';
 import { cx } from '../../lib/format.js';
 
-const ICONS = { ocr: ScanText, validation: ListChecks, tampering: ShieldAlert, face: ScanFace, risk: Gauge };
+const ICONS = { ocr: ScanText, validation: ListChecks, tampering: ShieldAlert, face: ScanFace, watchlist: ScanSearch, risk: Gauge };
 
 export default function ProcessingSteps({ steps, providers, documentImage }) {
   const [log, setLog] = useState([]);

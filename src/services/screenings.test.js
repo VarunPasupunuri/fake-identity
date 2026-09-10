@@ -17,7 +17,7 @@ const mem = new Map();
 globalThis.localStorage = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, v), removeItem: (k) => mem.delete(k) };
 
 const user = { uid: 'officer-1', displayName: 'Officer One', email: 'o@x', checkpoint: 'CP-TEST' };
-const base = { user, documentType: 'passport', images: { document: 'data:image/jpeg;base64,DOC', live: 'data:image/jpeg;base64,LIVE' }, ocr: { fields: { fullName: 'A B', documentNumber: 'X1' }, confidence: 0.9 }, validation: { checks: [], passed: 1, failed: 0, warnings: 0, ok: true }, tampering: { score: 3, flags: [], evidence: { elaImage: 'data:image/jpeg;base64,ELA' } }, face: { confidence: 90, match: true, documentFaceFound: true, liveFaceFound: true }, risk: { score: 5, level: 'low', factors: [], recommendation: 'accept', summary: '' }, providers: { ocr: 'tesseract', tamper: 'local', face: 'faceapi' }, fusion: { version: 1, decision: 'approve', confidence: { score: 91 }, risk: { score: 5, level: 'low' }, evidence: [] }, durationMs: 2840 };
+const base = { user, documentType: 'passport', images: { document: 'data:image/jpeg;base64,DOC', live: 'data:image/jpeg;base64,LIVE' }, ocr: { fields: { fullName: 'A B', documentNumber: 'X1' }, confidence: 0.9 }, validation: { checks: [], passed: 1, failed: 0, warnings: 0, ok: true }, tampering: { score: 3, flags: [], evidence: { elaImage: 'data:image/jpeg;base64,ELA' } }, face: { confidence: 90, match: true, documentFaceFound: true, liveFaceFound: true }, risk: { score: 5, level: 'low', factors: [], recommendation: 'accept', summary: '' }, providers: { ocr: 'tesseract', tamper: 'local', face: 'faceapi' }, fusion: { version: 1, decision: 'approve', confidence: { score: 91 }, risk: { score: 5, level: 'low' }, evidence: [] }, watchlist: { status: 'clear', provider: 'demo', synthetic: true, matches: [], fieldsUsed: ['documentNumber'] }, durationMs: 2840 };
 
 async function load({ demo = false, supabase = true } = {}) {
   vi.resetModules();
@@ -45,6 +45,7 @@ describe('screening upload flow', () => {
     expect(record).toMatchObject({ id, officerId: 'officer-1', imageStorage: 'supabase', documentImagePath: docPath, liveImagePath: livePath, documentImageUrl: null, liveImageUrl: null });
     expect(record).toMatchObject({ aiDecision: 'approve', confidence: 91, processingMs: 2840 });
     expect(record.fusion.decision).toBe('approve');
+    expect(record.watchlist).toMatchObject({ status: 'clear', provider: 'demo', synthetic: true });
     expect(JSON.stringify(record)).not.toContain('base64,DOC');
     expect(record.tampering.evidence.elaImage).toBe('data:image/jpeg;base64,ELA');
     expect(warn).not.toHaveBeenCalled();
@@ -94,9 +95,9 @@ describe('screening upload flow', () => {
 
   it('records without fusion output (legacy path) still save with null fusion fields', async () => {
     const { createScreening, getScreening } = await load({ demo: true, supabase: false });
-    const { fusion, durationMs, ...legacy } = base; // eslint-disable-line no-unused-vars
+    const { fusion, durationMs, watchlist, ...legacy } = base; // eslint-disable-line no-unused-vars
     const id = await createScreening(legacy);
-    expect(await getScreening(id)).toMatchObject({ fusion: null, aiDecision: null, confidence: null, processingMs: null, risk: { score: 5 } });
+    expect(await getScreening(id)).toMatchObject({ fusion: null, watchlist: null, aiDecision: null, confidence: null, processingMs: null, risk: { score: 5 } });
   });
 
   it('recordDecision only touches decision fields', async () => {
