@@ -31,8 +31,29 @@ export function getProviderConfig() {
 export function resolveProviders(overrides = {}) {
   const base = getProviderConfig();
   if (overrides.useMock) return { ocr: 'mock', tamper: 'mock', face: 'mock' };
-  return { ...base, ...overrides };
+  const { useMock, scenario, providers, ...rest } = overrides; // eslint-disable-line no-unused-vars
+  const merged = { ...base, ...(providers || {}), ...rest };
+  if (merged.ocr === 'cloud' && !isFirebaseConfigured) merged.ocr = 'tesseract';
+  if (merged.tamper === 'cloud' && !isFirebaseConfigured) merged.tamper = 'local';
+  return merged;
 }
+
+export const PROVIDER_OPTIONS = {
+  ocr: [
+    { value: 'tesseract', label: 'Tesseract.js (on device)', hint: 'Works offline; ~2–8 s per document' },
+    { value: 'cloud', label: 'Google Cloud Vision (Cloud Function)', hint: 'Higher accuracy; needs Firebase + Vision API', cloud: true },
+    { value: 'mock', label: 'Mock data', hint: 'Demo only' },
+  ],
+  tamper: [
+    { value: 'local', label: 'ELA + EXIF (on device)', hint: 'Error level analysis in the browser' },
+    { value: 'cloud', label: 'ELA + EXIF (Cloud Function)', hint: 'sharp-based, server side', cloud: true },
+    { value: 'mock', label: 'Mock data', hint: 'Demo only' },
+  ],
+  face: [
+    { value: 'faceapi', label: 'face-api.js (on device)', hint: 'SSD MobileNet + 128-d descriptors' },
+    { value: 'mock', label: 'Mock data', hint: 'Demo only' },
+  ],
+};
 
 export const modules = {
   ocr: runOcr,

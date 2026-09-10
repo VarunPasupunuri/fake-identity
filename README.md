@@ -30,6 +30,21 @@ npm test               # unit tests
 npm run build          # production build → dist/
 ```
 
+## UI highlights
+
+- **Responsive console** — collapsible sidebar on desktop, bottom navigation with a centre *Scan* action on phones/tablets, sticky decision bar on small screens, safe-area aware.
+- **Light / dark / system theme**, persisted per device; the palette uses semantic tokens so every screen is legible in both modes.
+- **Guided capture** — document-type cards with per-type tips, framing guide, and on-device quality checks (blur, exposure, contrast) before processing; face oval guide, timer and camera switching for the live photo.
+- **Processing screen** — per-module progress, timings, live log and a scan animation over the document.
+- **Results** — risk gauge with factor breakdown, tabbed panels on mobile, failed fields highlighted, tampering regions drawn over the document with an ELA heat-map toggle, face boxes, keyboard shortcuts (`A` / `F` / `R`) and a confirm step for *Reject*.
+- **History** — search, document/decision/risk filters, date range presets, table or card view, pagination, CSV export.
+- **Screening report** — timeline, copy link, JSON download, print-ready layout.
+- **Admin** — 14-day decision trend, risk distribution, breakdowns by document type and checkpoint, officer activity table, searchable audit log, user role management.
+- **Settings** — theme, checkpoint id, module provider selection at runtime, capture-guide and auto-run toggles, on-device asset health check, keyboard shortcut reference.
+- **PWA manifest** so the console can be installed to a tablet home screen; toasts, skeleton loaders, error boundary, offline indicator.
+
+Keyboard: `N` new screening · `G H` home · `G Y` history · `G A` admin · `G ,` settings.
+
 ## Firebase setup (production)
 
 1. Create a Firebase project, enable **Authentication → Email/Password**, **Firestore**, **Storage**, and (for the cloud OCR provider) the **Cloud Vision API** in GCP.

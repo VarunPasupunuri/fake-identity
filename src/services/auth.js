@@ -4,7 +4,7 @@
  */
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut as fbSignOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
-import { auth, db, isDemoMode } from '../lib/firebase.js';
+import { auth, db, isDemoMode, callFunction } from '../lib/firebase.js';
 import { demoStore } from './demoStore.js';
 
 export const DEMO_USERS = [
@@ -69,4 +69,14 @@ export async function listUsers() {
   if (isDemoMode) return DEMO_USERS.map(publicUser);
   const snap = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(200)));
   return snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
+}
+
+/** Admin: change a user's role (and optionally checkpoint). Demo mode updates the in-memory list. */
+export async function setUserRole(uid, role, checkpoint) {
+  if (isDemoMode) {
+    const u = DEMO_USERS.find((x) => x.uid === uid);
+    if (u) { u.role = role; if (checkpoint) u.checkpoint = checkpoint; }
+    return { ok: true };
+  }
+  return callFunction('setUserRole', { uid, role, checkpoint });
 }
