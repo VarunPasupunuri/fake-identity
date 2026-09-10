@@ -97,7 +97,7 @@ export default function ScreeningPage() {
               {decided ? (
                 <div className="flex items-center gap-2 rounded-xl bg-[var(--surface)] px-3 py-3 text-sm font-semibold text-emerald-600"><Check className="h-4 w-4" />Decision recorded — opening record…</div>
               ) : (
-                <DecisionBar recommendation={pipeline.results.risk?.recommendation} onDecide={decide} busy={!screeningId} />
+                <DecisionBar recommendation={pipeline.results.risk?.recommendation} aiDecision={pipeline.results.fusion?.decision} onDecide={decide} busy={!screeningId} />
               )}
             </ResultsView>
             <div className="flex flex-wrap items-center justify-between gap-3 pb-20 lg:pb-0">

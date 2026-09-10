@@ -118,6 +118,9 @@ describe('5. face mismatch', () => {
   it('rejects on a clear biometric mismatch (Case 5)', () => {
     expect(r.decision).toBe(DECISION.REJECT);
     expect(r.gates).toContain('biometric_mismatch');
+    // once the officer verifies the biometric finding nothing else blocks approval
+    expect(r.counterfactual.potentialDecision).toBe(DECISION.APPROVE);
+    expect(r.counterfactual.pivotal.map((p) => p.id)).toContain('face:match');
     expect(r.trust.biometricConsistency).toEqual(expect.objectContaining({ available: true, score: 38 }));
     expect(r.rationale).toMatch(/does not match the document photo/);
   });
@@ -138,6 +141,9 @@ describe('6/7. multiple simultaneous signals — high risk, high confidence', ()
   });
   it('detects three distinct correlations', () => {
     expect(r.correlations.map((c) => c.id)).toEqual(expect.arrayContaining(['corr:mrz_field_tamper:dateOfBirth', 'corr:photo_face', 'corr:metadata_ela']));
+  });
+  it('counterfactual can reach APPROVE once every cited finding is verified (photo/face correlation dissolves)', () => {
+    expect(r.counterfactual.potentialDecision).toBe(DECISION.APPROVE);
   });
   it('caps correlation points and never exceeds 100', () => {
     expect(r.risk.correlationPoints).toBeLessThanOrEqual(30);

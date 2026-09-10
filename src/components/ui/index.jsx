@@ -134,6 +134,38 @@ export function RiskGauge({ score, level, size = 156 }) {
   );
 }
 
+/** Neutral score ring (e.g. analysis confidence) — same geometry as RiskGauge, caller picks the tone. */
+export function ScoreRing({ value, label, size = 132, tone = 'stroke-brand-500', textTone = 'text-brand-600' }) {
+  const r = 60, c = 2 * Math.PI * r;
+  const pct = Math.max(0, Math.min(100, Number(value) || 0));
+  return (
+    <div className="relative flex items-center justify-center" style={{ width: size, height: size }} role="img" aria-label={`${label} ${Math.round(pct)} out of 100`}>
+      <svg viewBox="0 0 140 140" className="h-full w-full -rotate-90" aria-hidden="true">
+        <circle cx="70" cy="70" r={r} className="fill-none stroke-[var(--surface-2)]" strokeWidth="12" />
+        <circle cx="70" cy="70" r={r} className={cx('fill-none transition-all duration-1000 ease-out', tone)} strokeWidth="12" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - pct / 100)} />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className={cx('text-4xl font-bold leading-none', textTone)}>{Math.round(pct)}</span>
+        <span className="mt-1 text-[10px] font-semibold uppercase tracking-wider faint">{label}</span>
+      </div>
+    </div>
+  );
+}
+
+const AI_DECISION = {
+  approve: { label: 'Approve', tone: 'green' },
+  review: { label: 'Review', tone: 'amber' },
+  reject: { label: 'Reject', tone: 'red' },
+  insufficient_evidence: { label: 'Insufficient evidence', tone: 'slate' },
+};
+
+/** Four-way AI recommendation chip (distinct from the officer DecisionBadge). */
+export function AiDecisionBadge({ decision, prefix }) {
+  const d = AI_DECISION[decision];
+  if (!d) return <span className="badge bg-slate-100 text-slate-600 dark:bg-slate-700/40 dark:text-slate-300">{prefix ? `${prefix} ` : ''}Not assessed</span>;
+  return <span className={cx('badge', BADGE_TONES[d.tone], decision === 'insufficient_evidence' && 'border border-dashed border-slate-400')}>{prefix ? `${prefix} ` : ''}{d.label}</span>;
+}
+
 export function AnnotatedImage({ src, boxes = [], alt = '', className, maxH = 'max-h-[420px]' }) {
   const tones = { high: 'border-red-500 bg-red-500/15', medium: 'border-amber-500 bg-amber-500/15', low: 'border-yellow-400 bg-yellow-400/10', face: 'border-brand-400 bg-brand-400/10' };
   return (

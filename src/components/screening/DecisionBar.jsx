@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Check, Flag, X, Loader2 } from 'lucide-react';
-import { Kbd } from '../ui/index.jsx';
+import { Kbd, AiDecisionBadge } from '../ui/index.jsx';
 import { cx } from '../../lib/format.js';
 
-/** Officer decision buttons. Keyboard: A / F / R. Sticky at the bottom on small screens. */
-export default function DecisionBar({ recommendation, onDecide, busy, sticky = true }) {
+/**
+ * Officer decision buttons. Keyboard: A / F / R. Sticky at the bottom on small screens.
+ * `recommendation` is the legacy accept|flag|reject suggestion; `aiDecision` the four-way AI recommendation.
+ * The officer's choice is always recorded separately from the AI recommendation.
+ */
+export default function DecisionBar({ recommendation, aiDecision, onDecide, busy, sticky = true }) {
   const [note, setNote] = useState('');
   const [pending, setPending] = useState(null);
   const [confirm, setConfirm] = useState(null);
@@ -34,11 +38,16 @@ export default function DecisionBar({ recommendation, onDecide, busy, sticky = t
   );
 
   const body = (
-    <div className="space-y-2">
+    <div className="space-y-2" role="group" aria-labelledby="officer-decision-heading">
+      <div className="flex items-center justify-between gap-2">
+        <p id="officer-decision-heading" className="text-[11px] font-semibold uppercase tracking-wider faint">Officer decision</p>
+        {aiDecision && <AiDecisionBadge decision={aiDecision} prefix="AI:" />}
+      </div>
       <Btn d="accept" cls="btn-success" icon={Check} label="Accept" k="A" />
       <Btn d="flag" cls="btn-warn" icon={Flag} label="Flag for review" k="F" />
       <Btn d="reject" cls="btn-danger" icon={X} label="Reject" k="R" />
-      <input className="input min-h-10 text-xs" placeholder="Officer note (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
+      <input className="input min-h-10 text-xs" placeholder={recommendation ? 'Officer note — required reason if overriding the AI recommendation' : 'Officer note (optional)'} aria-label="Officer note" value={note} onChange={(e) => setNote(e.target.value)} />
+      {recommendation && <p className="text-[11px] faint">Choosing anything other than the suggested option records an officer override; add the reason in the note.</p>}
     </div>
   );
 

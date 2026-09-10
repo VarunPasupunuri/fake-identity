@@ -4,17 +4,21 @@ import { Card, RiskGauge, RiskBadge, Badge, StatusIcon, AnnotatedImage, Progress
 import { FIELD_LABELS } from '../../modules/validation/rules.js';
 import { DOCUMENT_TYPE_LABEL } from '../../modules/types.js';
 import { formatDate, cx, RISK_STYLES } from '../../lib/format.js';
+import { DecisionPanel, WhyPanel, EvidenceFusionPanel, CorrelationsPanel, EvidenceChainPanel, CounterfactualPanel } from './FusionPanels.jsx';
 
 const DATE_FIELDS = new Set(['dateOfBirth', 'expiryDate', 'validFrom', 'validUntil']);
 const FIELD_ORDER = ['fullName', 'surname', 'givenNames', 'documentNumber', 'visaNumber', 'visaType', 'nationality', 'issuingCountry', 'dateOfBirth', 'gender', 'expiryDate', 'validFrom', 'validUntil', 'entries', 'stayDuration', 'optionalData'];
 
 /**
- * All module outputs side by side (desktop) or tabbed (mobile).
- * `results` = { documentType, ocr, validation, tampering, face, risk, providers }
+ * Results screen. With fusion output (new pipeline) the order is:
+ * decision → risk + confidence → why → evidence fusion / trust → correlations →
+ * document + fields → validation → forensics → face → evidence chain → counterfactual.
+ * Records without `fusion` (older screenings) fall back to the legacy RiskPanel.
+ * `results` = { documentType, ocr, validation, tampering, face, risk, fusion?, providers }
  * `images`  = { document, live }
  */
 export default function ResultsView({ results, images, children }) {
-  const { documentType, ocr, validation, tampering, face, risk, providers } = results;
+  const { documentType, ocr, validation, tampering, face, risk, fusion, providers } = results;
   const [tab, setTab] = useState('all');
   const tabs = [
     { value: 'all', label: 'Overview', icon: LayoutGrid },
@@ -24,9 +28,19 @@ export default function ResultsView({ results, images, children }) {
     { value: 'face', label: 'Face', icon: ScanFace },
   ];
   const show = (k) => tab === 'all' || tab === k;
+  const hasFusion = Boolean(fusion && fusion.decision);
   return (
     <div className="space-y-5">
-      <RiskPanel risk={risk} documentType={documentType} ocr={ocr} face={face} tampering={tampering}>{children}</RiskPanel>
+      {hasFusion
+        ? <DecisionPanel fusion={fusion} documentType={documentType} ocr={ocr}>{children}</DecisionPanel>
+        : <RiskPanel risk={risk} documentType={documentType} ocr={ocr} face={face} tampering={tampering}>{children}</RiskPanel>}
+      {hasFusion && tab === 'all' && (
+        <div className="grid gap-5 lg:grid-cols-2">
+          <WhyPanel fusion={fusion} />
+          <EvidenceFusionPanel fusion={fusion} />
+        </div>
+      )}
+      {hasFusion && tab === 'all' && <CorrelationsPanel fusion={fusion} />}
       <Tabs tabs={tabs} value={tab} onChange={setTab} className="lg:hidden" />
       <div className="grid gap-5 lg:grid-cols-2">
         {show('data') && <ExtractedDataPanel ocr={ocr} validation={validation} provider={providers?.ocr} />}
@@ -34,6 +48,12 @@ export default function ResultsView({ results, images, children }) {
         {show('tamper') && <TamperingPanel tampering={tampering} image={images?.document} provider={providers?.tamper} />}
         {show('face') && <FacePanel face={face} images={images} provider={providers?.face} />}
       </div>
+      {hasFusion && tab === 'all' && (
+        <div className="grid gap-5 lg:grid-cols-2">
+          <EvidenceChainPanel fusion={fusion} />
+          <CounterfactualPanel fusion={fusion} />
+        </div>
+      )}
     </div>
   );
 }

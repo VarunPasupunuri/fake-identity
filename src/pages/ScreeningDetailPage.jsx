@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Printer, Copy, Clock, User, MapPin, FileText, Cpu, Download } from 'lucide-react';
 import { getScreening } from '../services/screenings.js';
 import ResultsView from '../components/screening/ResultsView.jsx';
-import { DecisionBadge, Spinner, EmptyState, PageHeader, Avatar } from '../components/ui/index.jsx';
+import { DecisionBadge, AiDecisionBadge, Spinner, EmptyState, PageHeader, Avatar } from '../components/ui/index.jsx';
 import { DOCUMENT_TYPE_LABEL } from '../modules/types.js';
 import { formatDateTime } from '../lib/format.js';
 import { useToast } from '../context/ToastContext.jsx';
@@ -39,7 +39,7 @@ export default function ScreeningDetailPage() {
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
         <div className="surface flex items-center gap-3 p-3"><Avatar name={row.officerName} size="sm" /><div className="min-w-0"><p className="text-[11px] uppercase tracking-wider faint">Officer</p><p className="truncate text-sm font-semibold">{row.officerName}</p></div></div>
         <div className="surface flex items-center gap-3 p-3"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--surface-2)]"><MapPin className="h-4 w-4 faint" /></span><div><p className="text-[11px] uppercase tracking-wider faint">Checkpoint</p><p className="text-sm font-semibold">{row.checkpoint}</p></div></div>
-        <div className="surface flex items-center gap-3 p-3"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--surface-2)]"><Clock className="h-4 w-4 faint" /></span><div className="min-w-0"><p className="text-[11px] uppercase tracking-wider faint">Decision</p><p className="flex items-center gap-2 text-sm font-semibold"><DecisionBadge decision={row.decision} />{row.decidedAt && <span className="truncate text-xs font-normal muted">{formatDateTime(row.decidedAt)}</span>}</p></div></div>
+        <div className="surface flex items-center gap-3 p-3"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--surface-2)]"><Clock className="h-4 w-4 faint" /></span><div className="min-w-0"><p className="text-[11px] uppercase tracking-wider faint">Officer decision · AI recommendation</p><p className="flex flex-wrap items-center gap-2 text-sm font-semibold"><DecisionBadge decision={row.decision} /><AiDecisionBadge decision={row.aiDecision || row.fusion?.decision} prefix="AI:" />{row.decidedAt && <span className="truncate text-xs font-normal muted">{formatDateTime(row.decidedAt)}</span>}</p></div></div>
       </div>
 
       <ResultsView results={row} images={images} />

@@ -21,7 +21,9 @@ import { FIELD_LABELS } from '../validation/rules.js';
 
 const byId = (evidence) => Object.fromEntries(evidence.map((e) => [e.id, e]));
 
-export function correlate(evidence) {
+export function correlate(allEvidence) {
+  // Evidence the officer has verified (counterfactual re-runs) can no longer take part in a correlation.
+  const evidence = allEvidence.filter((e) => !e.resolvedByOfficer);
   const ev = byId(evidence);
   const out = [];
   const tamperFlags = evidence.filter((e) => e.source === 'tampering' && e.id !== 'tampering:score' && e.status !== STATUS.UNAVAILABLE);

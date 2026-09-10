@@ -38,7 +38,7 @@ export function decide({ evidence, correlations, risk, confidence }) {
   // --- REJECT ---
   if (risk.score >= RISK_THRESHOLDS.reject) fire('risk_reject_band', risk.contributions.map((c) => c.id));
   if (conclusive.length) fire('critical_evidence', conclusive.map((e) => e.id));
-  if (ev['face:match']?.value?.state === 'mismatch') fire('biometric_mismatch', ['face:match']);
+  if (ev['face:match']?.status === STATUS.FAIL && ev['face:match'].value?.state === 'mismatch') fire('biometric_mismatch', ['face:match']);
   const critCorr = correlations.filter((c) => c.kind === 'aggravating' && c.severity === SEVERITY.CRITICAL);
   if (critCorr.length) fire('critical_correlation', critCorr.map((c) => c.id));
   if (gates.length) return { decision: DECISION.REJECT, gates, reasons: [...reasons] };
@@ -119,7 +119,7 @@ function shortLabel(e) {
 export function counterfactual({ decision, reasons, evidence, correlations, confidence, recompute }) {
   const ev = Object.fromEntries(evidence.map((e) => [e.id, e]));
   const corr = Object.fromEntries(correlations.map((c) => [c.id, c]));
-  const describe = (id) => ev[id]?.explanation || corr[id]?.label || id;
+  const describe = (id) => ev[id]?.label || ev[id]?.explanation || corr[id]?.label || id;
 
   if (decision === DECISION.INSUFFICIENT) {
     const missing = evidence.filter((e) => e.status === STATUS.UNAVAILABLE).map((e) => e.id);
