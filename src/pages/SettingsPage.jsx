@@ -82,7 +82,7 @@ export default function SettingsPage() {
 
         <Card title="Keyboard shortcuts" icon={Keyboard}>
           <ul className="grid grid-cols-2 gap-2 text-sm">
-            {[['N', 'New screening'], ['G H', 'Home'], ['G Y', 'History'], ['G A', 'Admin'], ['A / F / R', 'Accept / Flag / Reject on results'], ['Esc', 'Close panels']].map(([k, l]) => <li key={k} className="flex items-center justify-between rounded-lg bg-[var(--surface-2)] px-3 py-2"><span className="muted">{l}</span><span className="flex gap-1">{k.split(' ').map((x) => <Kbd key={x}>{x}</Kbd>)}</span></li>)}
+            {[['N', 'New screening'], ['G H', 'Home'], ['G Y', 'History'], ['G A', 'Admin'], ['A / F / R', 'Accept / Flag / Reject on results'], ['Esc', 'Close panels']].map(([k, l]) => <li key={k} className="flex items-center justify-between rounded-lg bg-[var(--surface-2)] px-3 py-2"><span className="muted">{l}</span><span className="flex gap-1">{k.split(' ').map((x, i) => <Kbd key={i}>{x}</Kbd>)}</span></li>)}
           </ul>
         </Card>
 

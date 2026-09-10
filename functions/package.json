@@ -3,7 +3,7 @@
   "description": "Cloud Functions for BorderScreen: Cloud Vision OCR, ELA/EXIF tampering analysis, role management",
   "private": true,
   "type": "module",
-  "engines": { "node": "20" },
+  "engines": { "node": "22" },
   "main": "index.js",
   "scripts": {
     "serve": "firebase emulators:start --only functions",

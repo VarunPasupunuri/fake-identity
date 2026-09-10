@@ -9,7 +9,7 @@ A responsive web app for border checkpoint officers: scan a passport / visa / na
 | Layer | Choice |
 |---|---|
 | Frontend | React 19 + Vite 8, Tailwind CSS 4, React Router 7, lucide-react |
-| Backend | Firebase — Auth (email/password, officer/admin roles), Firestore (audit log), Storage (images), Cloud Functions v2 (Node 20) |
+| Backend | Firebase — Auth (email/password, officer/admin roles), Firestore (audit log), Storage (images), Cloud Functions v2 (Node 22) |
 | OCR | **Tesseract.js** in the browser (self-hosted worker/WASM/traineddata, works offline) · or Google **Cloud Vision** via the `ocrExtract` Cloud Function |
 | Face verification | **face-api.js** (`@vladmandic/face-api`, SSD MobileNet v1 + 128-d descriptors) in the browser, self-hosted weights |
 | Tampering | **Error Level Analysis** + **EXIF/XMP metadata** checks — in the browser (canvas + exifr) or in the `analyzeTampering` Cloud Function (sharp + exifr) |
@@ -23,7 +23,7 @@ cp .env.example .env   # leave the Firebase keys blank for demo mode
 npm run dev            # http://localhost:5173
 ```
 
-**Demo mode** (no Firebase config) gives you two local accounts, `officer@demo.gov` and `admin@demo.gov` (password `demo1234`), and persists screenings in `localStorage`. Real OCR, ELA and face verification still run in the browser. On the *New screening* page you can also toggle **Use mock module outputs** and choose a *genuine* or *forged* scenario to demo the full flow instantly.
+**Demo mode** (no Firebase config) gives you two local accounts, `officer@demo.gov` and `admin@demo.gov` (password `demo1234`), and persists screenings in `localStorage`. Real OCR, ELA and face verification still run in the browser. On the *New screening* page you can also toggle **Mock outputs** and choose a *genuine* or *forged* scenario to demo the full flow instantly.
 
 ```bash
 npm test               # unit tests
