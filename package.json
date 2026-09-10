@@ -1,0 +1,38 @@
+{
+  "name": "border-screen",
+  "private": true,
+  "version": "0.1.0",
+  "description": "AI-Based Fake Identity & Document Screening System (SIH PS 26188, MHA/SSB)",
+  "type": "module",
+  "scripts": {
+    "postinstall": "node scripts/copy-assets.mjs",
+    "predev": "node scripts/copy-assets.mjs",
+    "prebuild": "node scripts/copy-assets.mjs",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "emulators": "firebase emulators:start",
+    "deploy": "firebase deploy"
+  },
+  "dependencies": {
+    "@vladmandic/face-api": "^1.7.15",
+    "exifr": "^7.1.3",
+    "firebase": "^12.19.0",
+    "lucide-react": "^1.44.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.18.3",
+    "tesseract.js": "^7.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "@vitejs/plugin-react": "^6.0.0",
+    "tailwindcss": "^4.3.3",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.0"
+  }
+}

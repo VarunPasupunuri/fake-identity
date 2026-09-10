@@ -1,0 +1,29 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "screenings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "officerId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "screenings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "decision", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "screenings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "documentType", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
