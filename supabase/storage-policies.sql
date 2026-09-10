@@ -14,9 +14,9 @@
 -- the same value (e.g. 'fake' if that is what you created in the dashboard).
 -- ─────────────────────────────────────────────────────────────────────────────
 create or replace function public.screening_bucket() returns text
-language sql immutable as $$ select 'identity-documents'::text $$;
+language sql immutable as $$ select 'fake'::text $$;
 
--- 1. Private bucket. Idempotent: creates it, or forces public = false if it already exists.
+-- 1. Private bucket "fake". Idempotent: creates it, or forces public = false if it already exists.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (public.screening_bucket(), public.screening_bucket(), false, 15728640, array['image/jpeg', 'image/png', 'image/webp'])
 on conflict (id) do update

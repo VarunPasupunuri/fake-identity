@@ -55,7 +55,7 @@ Authentication and the audit log stay on Firebase (free Spark plan). Document an
 officer's browser
  ├─ Firebase Auth      → signs in, issues a Firebase ID token (JWT)
  ├─ Firestore          → screenings/{id} holds all module outputs + decision + image PATHS
- └─ Supabase Storage   → private bucket "identity-documents"
+ └─ Supabase Storage   → private bucket "fake"
         ▲  every request carries the *Firebase* ID token (Supabase "Third-Party Auth")
         └─ RLS policies on storage.objects check auth.jwt()->>'sub' (Firebase uid)
            and auth.jwt()->>'app_role' (admin), so officers can only write/read
@@ -89,14 +89,14 @@ Firestore never stores image bytes or URLs in production — only object paths s
 
 1. Go to <https://supabase.com>, sign in, **New project** (any region; the free tier includes 1 GB of Storage).
 2. **Register Firebase as an auth provider**: Authentication → *Sign In / Providers* → **Third-Party Auth** → *Add provider* → **Firebase** → enter your **Firebase project ID** → save. Supabase will now verify Firebase ID tokens and run those requests as the `authenticated` role.
-3. **Create the private bucket and policies**: SQL Editor → *New query* → paste [`supabase/storage-policies.sql`](supabase/storage-policies.sql) → *Run*. It creates the bucket `identity-documents` with `public = false`, a 15 MB / image-only limit, and four RLS policies (officer upload own folder, officer read own folder, admin read all, admin delete). You can confirm under Storage → *identity-documents* → the bucket shows **Private**.
-   (If you prefer the UI: Storage → *New bucket* → name `identity-documents`, **Public bucket OFF** — then still run the SQL for the policies.)
-   Using a different bucket name (for example `fake`)? Edit the single `public.screening_bucket()` line at the top of the SQL file to return that name, and set `VITE_SUPABASE_STORAGE_BUCKET` to the same value.
+3. **Create the private bucket and policies**: SQL Editor → *New query* → paste [`supabase/storage-policies.sql`](supabase/storage-policies.sql) → *Run*. It creates the bucket `fake` (the name is set once in `public.screening_bucket()` at the top of the file) with `public = false`, a 15 MB / image-only limit, and four RLS policies (officer upload own folder, officer read own folder, admin read all, admin delete). You can confirm under Storage → *fake* → the bucket shows **Private**.
+   (If you prefer the UI: Storage → *New bucket* → name `fake`, **Public bucket OFF** — then still run the SQL for the policies.)
+   Using a different bucket name? Edit the single `public.screening_bucket()` line at the top of the SQL file to return that name, and set `VITE_SUPABASE_STORAGE_BUCKET` to the same value.
 4. **Collect credentials**: Project Settings → **API** → copy *Project URL* and the **anon public** key into `.env`:
    ```
    VITE_SUPABASE_URL=https://xxxx.supabase.co
    VITE_SUPABASE_ANON_KEY=eyJ...          # anon key only — NEVER the service_role key
-   VITE_SUPABASE_STORAGE_BUCKET=identity-documents
+   VITE_SUPABASE_STORAGE_BUCKET=fake
    ```
    The anon key is a public identifier; it grants nothing by itself because the bucket is private and every policy requires a valid Firebase token.
 
@@ -108,8 +108,8 @@ npm install
 npm run dev             # http://localhost:5173 (camera works on localhost)
 ```
 
-- Sign in with a Firebase user that has the claims from step 1.4, run a screening, and open **Settings** — *Image storage* should read `Supabase private bucket "identity-documents" (signed URLs)`.
-- In Supabase → Storage → *identity-documents* you should see `screenings/<firebase uid>/<screening id>/document-….jpg` (and `live-….jpg`).
+- Sign in with a Firebase user that has the claims from step 1.4, run a screening, and open **Settings** — *Image storage* should read `Supabase private bucket "fake" (signed URLs)`.
+- In Supabase → Storage → *fake* you should see `screenings/<firebase uid>/<screening id>/document-….jpg` (and `live-….jpg`).
 - Open the screening from **History**: the images are fetched with signed URLs that expire after 1 hour. Copy one of those URLs into a private window: it works until expiry; the plain object URL without a token returns `400/403`.
 - Sign in as a second officer: their History cannot show the first officer's images (the signed-URL request is denied by RLS and the UI shows the *No image* placeholder). An `app_role: admin` user sees everything.
 - If `VITE_SUPABASE_*` is blank while Firebase is configured, screenings still save: images are stored inline in the Firestore record (compact JPEG data URLs) and the officer gets a warning toast. Use this only for testing.

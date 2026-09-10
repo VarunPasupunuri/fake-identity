@@ -26,7 +26,7 @@ const env = import.meta.env;
 
 export const SUPABASE_URL = env.VITE_SUPABASE_URL || '';
 export const SUPABASE_ANON_KEY = env.VITE_SUPABASE_ANON_KEY || '';
-export const STORAGE_BUCKET = env.VITE_SUPABASE_STORAGE_BUCKET || 'identity-documents';
+export const STORAGE_BUCKET = env.VITE_SUPABASE_STORAGE_BUCKET || 'fake';
 export const isSupabaseConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 
 /** Signed URLs are valid for this long; the cache refreshes them a little earlier. */
