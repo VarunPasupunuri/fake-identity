@@ -21,7 +21,7 @@ export function ThemeProvider({ children }) {
   useEffect(() => {
     document.documentElement.classList.toggle('dark', isDark);
     document.documentElement.dataset.theme = isDark ? 'dark' : 'light';
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', isDark ? '#0b1020' : '#0b1230');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', isDark ? '#121416' : '#1f3b63');
   }, [isDark]);
 
   const value = useMemo(() => ({

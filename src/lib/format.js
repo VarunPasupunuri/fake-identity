@@ -24,19 +24,19 @@ export function timeAgo(iso) {
 export const cx = (...a) => a.filter(Boolean).join(' ');
 
 export const RISK_STYLES = {
-  low: { badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300', ring: 'stroke-emerald-500', text: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-500/5', border: 'border-emerald-200 dark:border-emerald-500/30', label: 'Low risk', solid: 'bg-emerald-500' },
-  medium: { badge: 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300', ring: 'stroke-amber-500', text: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-500/5', border: 'border-amber-200 dark:border-amber-500/30', label: 'Medium risk', solid: 'bg-amber-500' },
-  high: { badge: 'bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300', ring: 'stroke-red-500', text: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-500/5', border: 'border-red-200 dark:border-red-500/30', label: 'High risk', solid: 'bg-red-500' },
+  low: { badge: 'badge-ok', ring: 'stroke-[var(--ok)]', text: 'text-[var(--ok)]', bg: 'bg-[var(--ok-soft)]', border: 'border-[color-mix(in_oklab,var(--ok)_40%,var(--border))]', label: 'Low risk', solid: 'bg-[var(--ok)]' },
+  medium: { badge: 'badge-warn', ring: 'stroke-[var(--warn)]', text: 'text-[var(--warn)]', bg: 'bg-[var(--warn-soft)]', border: 'border-[color-mix(in_oklab,var(--warn)_40%,var(--border))]', label: 'Medium risk', solid: 'bg-[var(--warn)]' },
+  high: { badge: 'badge-danger', ring: 'stroke-[var(--danger)]', text: 'text-[var(--danger)]', bg: 'bg-[var(--danger-soft)]', border: 'border-[color-mix(in_oklab,var(--danger)_40%,var(--border))]', label: 'High risk', solid: 'bg-[var(--danger)]' },
 };
 
 export const DECISION_STYLES = {
-  accept: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300',
-  flag: 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300',
-  reject: 'bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300',
-  pending: 'bg-slate-100 text-slate-600 dark:bg-slate-700/40 dark:text-slate-300',
+  accept: 'badge-ok',
+  flag: 'badge-warn',
+  reject: 'badge-danger',
+  pending: 'badge-neutral',
 };
 
-export const STATUS_STYLES = { pass: 'text-emerald-600', fail: 'text-red-600', warn: 'text-amber-600', skip: 'text-slate-400' };
+export const STATUS_STYLES = { pass: 'status-ok', fail: 'status-danger', warn: 'status-warn', skip: 'status-neutral' };
 
 /** Group rows by day for the last `days` days → [{ label, iso, rows }] oldest first. */
 export function lastNDays(rows, days = 7) {

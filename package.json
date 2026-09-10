@@ -18,6 +18,8 @@
     "deploy": "firebase deploy"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
     "@supabase/supabase-js": "^2.116.0",
     "@vladmandic/face-api": "^1.7.15",
     "exifr": "^7.1.3",
