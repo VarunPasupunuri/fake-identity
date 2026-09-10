@@ -1,5 +1,5 @@
 /**
- * BorderScreen Cloud Functions (Firebase Functions v2, region asia-south1).
+ * Identity Sentinel Cloud Functions (Firebase Functions v2, region asia-south1).
  *
  *  ocrExtract        callable  – Google Cloud Vision DOCUMENT_TEXT_DETECTION → raw text + confidence
  *  analyzeTampering  callable  – ELA (sharp) + EXIF (exifr) → { score, flags, evidence }

@@ -6,7 +6,9 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { getProviderConfig } from '../modules/registry.js';
 import { CHECKPOINT_ID } from '../lib/firebase.js';
 
-const KEY = 'borderscreen:settings';
+import { STORAGE_PREFIX } from '../lib/storageKeys.js';
+
+const KEY = `${STORAGE_PREFIX}settings`;
 const SettingsContext = createContext(null);
 
 const defaults = () => ({

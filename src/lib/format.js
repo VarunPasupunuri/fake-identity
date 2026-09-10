@@ -21,6 +21,13 @@ export function timeAgo(iso) {
   return `${Math.floor(s / 86400)} d ago`;
 }
 
+/** Human-readable case identifier derived from the record: CASE-YYYY-XXXXXX (no extra storage). */
+export function caseId(row) {
+  if (!row?.id) return '—';
+  const year = (row.createdAt || '').slice(0, 4) || new Date().getFullYear();
+  return `CASE-${year}-${String(row.id).slice(-6).toUpperCase()}`;
+}
+
 export const cx = (...a) => a.filter(Boolean).join(' ');
 
 export const RISK_STYLES = {

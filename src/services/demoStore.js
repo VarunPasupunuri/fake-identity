@@ -2,7 +2,9 @@
  * Demo-mode persistence: a tiny localStorage document store with the subset of
  * behaviour the app needs from Firestore. Only used when Firebase is not configured.
  */
-const PREFIX = 'borderscreen:';
+import { STORAGE_PREFIX } from '../lib/storageKeys.js';
+
+const PREFIX = STORAGE_PREFIX;
 
 function read(key, fallback) {
   try { const v = localStorage.getItem(PREFIX + key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }

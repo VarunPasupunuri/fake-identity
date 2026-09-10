@@ -1,4 +1,4 @@
-# BorderScreen — AI-Based Fake Identity & Document Screening System
+# Identity Sentinel — Intelligent Identity & Document Verification Platform
 
 Smart India Hackathon **PS 26188** · Ministry of Home Affairs · Sashastra Seema Bal (SSB)
 

@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { STORAGE_PREFIX } from '../lib/storageKeys.js';
 
 const ThemeContext = createContext(null);
-const KEY = 'borderscreen:theme';
+const KEY = `${STORAGE_PREFIX}theme`;
 
 function readStored() { try { return localStorage.getItem(KEY) || 'system'; } catch { return 'system'; } }
 

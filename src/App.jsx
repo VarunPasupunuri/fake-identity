@@ -9,15 +9,17 @@ import { Spinner } from './components/ui/index.jsx';
 const ScreeningPage = lazy(() => import('./pages/ScreeningPage.jsx'));
 const HistoryPage = lazy(() => import('./pages/HistoryPage.jsx'));
 const ScreeningDetailPage = lazy(() => import('./pages/ScreeningDetailPage.jsx'));
+const InvestigationsPage = lazy(() => import('./pages/InvestigationsPage.jsx'));
+const ReportsPage = lazy(() => import('./pages/ReportsPage.jsx'));
 const AdminPage = lazy(() => import('./pages/AdminPage.jsx'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage.jsx'));
 
-const Loading = () => <div className="flex min-h-[50vh] items-center justify-center"><Spinner className="h-8 w-8" /></div>;
+const Loading = () => <div className="flex min-h-[50vh] items-center justify-center"><Spinner className="h-6 w-6" /></div>;
 
 function RequireAuth({ children, admin = false }) {
   const { user, loading, isAdmin } = useAuth();
   const location = useLocation();
-  if (loading) return <div className="flex min-h-dvh items-center justify-center"><Spinner className="h-8 w-8" /></div>;
+  if (loading) return <div className="flex min-h-dvh items-center justify-center"><Spinner className="h-6 w-6" /></div>;
   if (!user) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   if (admin && !isAdmin) return <Navigate to="/" replace />;
   return children;
@@ -33,6 +35,9 @@ export default function App() {
           <Route path="screen" element={<ScreeningPage />} />
           <Route path="history" element={<HistoryPage />} />
           <Route path="history/:id" element={<ScreeningDetailPage />} />
+          <Route path="investigations" element={<InvestigationsPage />} />
+          <Route path="investigations/:id" element={<ScreeningDetailPage investigation />} />
+          <Route path="reports" element={<ReportsPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="admin" element={<RequireAuth admin><AdminPage /></RequireAuth>} />
         </Route>

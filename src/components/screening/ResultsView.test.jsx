@@ -29,7 +29,7 @@ function results({ ocr = mkOcr(), tampering = tamper(4), face: f = face(91), pro
 }
 const IMG = { document: 'data:image/png;base64,iVBORw0KGgo=', live: 'data:image/png;base64,iVBORw0KGgo=' };
 
-describe('ResultsView — four-way AI decision', () => {
+describe('ResultsView — four-way system assessment', () => {
   it('APPROVE: shows the decision, separate risk and confidence, and no risk factors', () => {
     const r = results();
     expect(r.fusion.decision).toBe(DECISION.APPROVE);
@@ -39,15 +39,18 @@ describe('ResultsView — four-way AI decision', () => {
     expect(screen.getByText('Analysis confidence')).toBeTruthy();
     expect(screen.getByText(/How suspicious the evidence is/)).toBeTruthy();
     expect(screen.getByText(/not whether the document is genuine/)).toBeTruthy();
-    expect(screen.getByRole('img', { name: `confidence ${r.fusion.confidence.score} out of 100` })).toBeTruthy();
+    expect(screen.getByLabelText(`confidence ${r.fusion.confidence.score} out of 100`)).toBeTruthy();
+    expect(screen.getByLabelText(`risk ${r.fusion.risk.score} out of 100`)).toBeTruthy();
+    expect(screen.getAllByText('System assessment').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Verification status')).toBeTruthy();
     // only residual, low-severity contributions (face 91% → +3, forensics 4% → +2); nothing fails
     const why = screen.getByRole('heading', { name: 'Why this decision?' }).closest('section');
     expect(within(why).queryByText('critical')).toBeNull();
     expect(within(why).queryByText('high')).toBeNull();
-    const list = screen.getByRole('list', { name: 'Evidence dimensions' });
+    const list = screen.getByRole('table', { name: 'Verification signals' });
     expect(within(list).queryByText('FAIL')).toBeNull();
     expect(within(list).getAllByText('PASS').length).toBe(5);
-    expect(screen.queryByRole('heading', { name: 'Correlated signals' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Conflicting evidence' })).toBeNull();
   });
 
   it('REVIEW: lists the strongest factors with contribution points and shows correlations only when present', () => {
@@ -58,7 +61,7 @@ describe('ResultsView — four-way AI decision', () => {
     const why = screen.getByRole('heading', { name: 'Why this decision?' }).closest('section');
     expect(within(why).getByText('Date of birth differs from MRZ')).toBeTruthy();
     expect(within(why).getByText('+25')).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Correlated signals' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Conflicting evidence' })).toBeTruthy();
     expect(screen.getAllByText(/MRZ inconsistency overlaps a tampering signal on Date of birth/).length).toBeGreaterThan(0);
     expect(screen.getByText('+12 risk')).toBeTruthy();
   });
@@ -90,11 +93,11 @@ describe('ResultsView — four-way AI decision', () => {
     const rows = fusionRows(r.fusion);
     expect(rows.find((x) => x.key === 'documentIntegrity')).toMatchObject({ status: 'unavailable', trust: null });
     expect(rows.find((x) => x.key === 'biometricConsistency')).toMatchObject({ status: 'unavailable', trust: null });
-    const list = screen.getByRole('list', { name: 'Evidence dimensions' });
+    const list = screen.getByRole('table', { name: 'Verification signals' });
     expect(within(list).getAllByText('Unavailable').length).toBe(2);
-    expect(within(list).getAllByText('UNAVAILABLE').length).toBe(2);
+    expect(within(list).getAllByText('UNAVAILABLE').length).toBe(3); // integrity, biometric, watchlist (not run)
     expect(within(list).getAllByText('PASS').length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText(/UNAVAILABLE means the analysis did not run/)).toBeTruthy();
+    expect(screen.getByText(/UNAVAILABLE means the check did not run/)).toBeTruthy();
   });
 
   it('risk and confidence are separate values on screen', () => {
@@ -102,7 +105,8 @@ describe('ResultsView — four-way AI decision', () => {
     render(<ResultsView results={mock} images={IMG} />);
     const risk = mock.fusion.risk.score, conf = mock.fusion.confidence.score;
     expect(risk).not.toBe(conf);
-    expect(screen.getByRole('img', { name: `confidence ${conf} out of 100` })).toBeTruthy();
+    expect(screen.getByLabelText(`confidence ${conf} out of 100`)).toBeTruthy();
+    expect(screen.getByLabelText(`risk ${risk} out of 100`)).toBeTruthy();
     expect(screen.getByText('Demo providers — not real analysis')).toBeTruthy();
   });
 
@@ -121,21 +125,23 @@ describe('ResultsView — four-way AI decision', () => {
     const r = results();
     const legacy = { ...r, fusion: undefined, risk: { score: 12, level: 'low', factors: [], recommendation: 'accept', summary: 'No issues detected.' } };
     render(<ResultsView results={legacy} images={IMG} />);
-    expect(screen.queryByText('AI recommendation')).toBeNull();
+    expect(screen.queryAllByText('System assessment').length).toBe(0);
+    expect(screen.getByText('Risk assessment')).toBeTruthy();
     expect(screen.getByText('Suggested: accept')).toBeTruthy();
-    expect(screen.getByText('Extracted data')).toBeTruthy();
+    expect(screen.getByText('Document data')).toBeTruthy();
   });
 });
 
-describe('DecisionBar — officer decision vs AI recommendation', () => {
-  it('labels the officer controls separately from the AI recommendation and records the officer choice', async () => {
+describe('DecisionBar — officer decision vs system assessment', () => {
+  it('labels the officer controls separately from the system assessment and records the officer choice', async () => {
     const onDecide = vi.fn(async () => {});
     render(<DecisionBar recommendation="flag" aiDecision="review" onDecide={onDecide} sticky={false} />);
     expect(screen.getByText('Officer decision')).toBeTruthy();
-    expect(screen.getByText('AI: Review')).toBeTruthy();
-    expect(screen.getByText('suggested').closest('button').textContent).toMatch(/Flag for review/);
+    expect(screen.getByText('System: Review')).toBeTruthy();
+    expect(screen.getByText('suggested').closest('button').textContent).toMatch(/Review/);
+    expect(screen.queryByText(/AI:/)).toBeNull();
     fireEvent.change(screen.getByLabelText('Officer note'), { target: { value: 'Verified against authorized source' } });
-    fireEvent.click(screen.getByRole('button', { name: /Accept/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Approve/ }));
     await Promise.resolve();
     expect(onDecide).toHaveBeenCalledWith({ decision: 'accept', note: 'Verified against authorized source' });
   });

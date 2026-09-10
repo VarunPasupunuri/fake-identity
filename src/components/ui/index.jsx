@@ -93,7 +93,7 @@ const AI_DECISION = {
   insufficient_evidence: { label: 'Insufficient evidence', cls: 'badge-dashed' },
 };
 
-/** Four-way AI recommendation chip (distinct from the officer DecisionBadge). */
+/** Four-way system-assessment chip (distinct from the officer DecisionBadge). */
 export function AiDecisionBadge({ decision, prefix }) {
   const d = AI_DECISION[decision];
   if (!d) return <span className="badge badge-neutral">{prefix ? `${prefix} ` : ''}Not assessed</span>;

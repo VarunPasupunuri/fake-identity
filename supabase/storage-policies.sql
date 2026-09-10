@@ -1,4 +1,4 @@
--- BorderScreen — Supabase Storage setup for identity-document images.
+-- Identity Sentinel — Supabase Storage setup for identity-document images.
 -- Run in Supabase Dashboard > SQL Editor (free tier is sufficient).
 --
 -- Prerequisite: Dashboard > Authentication > Sign In / Providers > Third-Party Auth

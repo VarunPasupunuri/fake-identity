@@ -154,6 +154,13 @@ export function seedDemoData(user) {
   rows[4] = mk(4, { risk: { score: 41, level: 'medium', factors: [{ id: 'v', label: 'Document not expired', points: 25, source: 'validation', detail: 'Expired 40 days ago.' }], recommendation: 'flag', summary: 'Driven by: expiry.' }, decision: 'flag', validation: { checks: [], passed: 5, failed: 1, warnings: 0, ok: false } });
   rows[7] = mk(7, { risk: { score: 35, level: 'medium', factors: [], recommendation: 'flag', summary: '' }, decision: 'flag' });
   rows[9] = mk(9, { risk: { score: 88, level: 'high', factors: [], recommendation: 'reject', summary: '' }, decision: 'reject' });
+  // Seed rows pre-date evidence fusion; derive the system assessment fields the dashboard shows from the legacy risk block.
+  const AI = { accept: 'approve', flag: 'review', reject: 'reject' };
+  for (const r of rows) {
+    r.aiDecision = r.aiDecision || AI[r.risk?.recommendation] || null;
+    r.confidence = r.confidence ?? 70 + ((r.risk?.score || 0) % 17);
+    r.processingMs = r.processingMs ?? 9000 + ((r.risk?.score || 0) * 90);
+  }
   for (const r of rows.reverse()) demoStore.insert(COLLECTION, r);
   void user;
 }

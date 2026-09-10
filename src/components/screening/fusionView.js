@@ -18,6 +18,7 @@ export const DIMENSIONS = [
   { key: 'documentIntegrity', label: 'Document integrity', hint: 'Image forensics, metadata', match: (e) => e.source === 'tampering' },
   { key: 'biometricConsistency', label: 'Biometric consistency', hint: 'Live face vs document photo', match: (e) => e.source === 'face' },
   { key: 'extractionConfidence', label: 'Extraction confidence', hint: 'OCR quality and MRZ read', match: (e) => e.source === 'ocr' },
+  { key: 'watchlist', label: 'Watchlist screening', hint: 'Configured list', match: (e) => e.source === 'watchlist', noTrust: true },
 ];
 
 const RANK = { fail: 3, warn: 2, pass: 1, info: 0 };
@@ -42,7 +43,7 @@ export function fusionRows(fusion) {
       label: dim.label,
       hint: dim.hint,
       status,
-      trust: trust?.available ? trust.score : null,
+      trust: dim.noTrust ? undefined : trust?.available ? trust.score : null,
       unavailableReason: trust && !trust.available ? trust.reason : null,
       findings: items.filter((e) => e.status === 'fail' || e.status === 'warn').map((e) => e.label),
     };

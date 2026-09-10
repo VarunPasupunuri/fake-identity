@@ -1,12 +1,12 @@
 {
-  "name": "BorderScreen — Identity & Document Screening",
-  "short_name": "BorderScreen",
-  "description": "AI-based fake identity and document screening for border checkpoints (SIH PS 26188).",
+  "name": "Identity Sentinel — Intelligent Identity & Document Verification Platform",
+  "short_name": "Identity Sentinel",
+  "description": "Document and identity verification workstation for screening officers: extraction, validation, integrity analysis, face comparison, watchlist screening and evidence-based risk assessment.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#0b1230",
-  "theme_color": "#0b1230",
+  "background_color": "#f7f7f5",
+  "theme_color": "#1f3b63",
   "icons": [
     { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
     { "src": "/icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }

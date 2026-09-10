@@ -3,7 +3,7 @@
  * Set Firebase custom claims for a user WITHOUT Cloud Functions (works on the free Spark plan).
  *
  *   role      = 'authenticated'   → required by Supabase third-party auth
- *   app_role  = 'officer'|'admin' → BorderScreen application role (also mirrored to users/{uid}.role)
+ *   app_role  = 'officer'|'admin' → Identity Sentinel application role (also mirrored to users/{uid}.role)
  *
  * Usage:
  *   GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json \

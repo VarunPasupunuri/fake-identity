@@ -1,19 +1,25 @@
-import { NavLink, Outlet, useNavigate, Link } from 'react-router-dom';
-import { ShieldCheck, ScanLine, History, LayoutDashboard, LogOut, Home, Menu, X, FlaskConical, Settings, Sun, Moon, WifiOff, ChevronsLeft, ChevronsRight, Search } from 'lucide-react';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { ScanLine, History, LayoutDashboard, LogOut, Menu, X, Settings, Sun, Moon, WifiOff, ChevronsLeft, ChevronsRight, FolderSearch, FileText, ShieldCheck, FlaskConical, MoreHorizontal } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useTheme } from '../../context/ThemeContext.jsx';
 import { useSettings } from '../../context/SettingsContext.jsx';
 import { Avatar, useOnline, Kbd } from '../ui/index.jsx';
+import Logo, { LogoMark } from '../brand/Logo.jsx';
 import { cx } from '../../lib/format.js';
 
+/** Workflow-ordered navigation. `group` separates operations from system sections. */
 const NAV = [
-  { to: '/', label: 'Home', icon: Home, end: true },
-  { to: '/screen', label: 'Screen', icon: ScanLine, primary: true },
-  { to: '/history', label: 'History', icon: History },
-  { to: '/admin', label: 'Admin', icon: LayoutDashboard, admin: true },
-  { to: '/settings', label: 'Settings', icon: Settings },
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true, group: 'Operations', mobile: true },
+  { to: '/screen', label: 'Screen document', short: 'Screen', icon: ScanLine, group: 'Operations', mobile: true, kbd: 'N' },
+  { to: '/history', label: 'Screening history', short: 'History', icon: History, group: 'Operations', mobile: true },
+  { to: '/investigations', label: 'Investigations', short: 'Cases', icon: FolderSearch, group: 'Operations', mobile: true },
+  { to: '/reports', label: 'Reports', icon: FileText, group: 'Operations' },
+  { to: '/admin', label: 'Administration', icon: ShieldCheck, group: 'System', admin: true },
+  { to: '/settings', label: 'Settings', icon: Settings, group: 'System' },
 ];
+
+const NAV_KEY = 'identity-sentinel:nav';
 
 export default function AppShell() {
   const { user, isAdmin, signOut, isDemoMode } = useAuth();
@@ -22,19 +28,20 @@ export default function AppShell() {
   const navigate = useNavigate();
   const online = useOnline();
   const [open, setOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('borderscreen:nav') === 'collapsed'; } catch { return false; } });
+  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem(NAV_KEY) === 'collapsed'; } catch { return false; } });
   const items = NAV.filter((n) => !n.admin || isAdmin);
+  const groups = [...new Set(items.map((n) => n.group))];
 
-  useEffect(() => { try { localStorage.setItem('borderscreen:nav', collapsed ? 'collapsed' : 'open'); } catch { /* ignore */ } }, [collapsed]);
+  useEffect(() => { try { localStorage.setItem(NAV_KEY, collapsed ? 'collapsed' : 'open'); } catch { /* ignore */ } }, [collapsed]);
 
-  // Global shortcuts: g h / g s / g y / g a, and "n" for new screening
+  // Keyboard: n → new screening; g then h/s/y/i/r/a/, → navigate
   useEffect(() => {
     let pendingG = false;
     const fn = (e) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
       if (e.key === 'g') { pendingG = true; setTimeout(() => { pendingG = false; }, 800); return; }
-      if (pendingG) { const map = { h: '/', s: '/screen', y: '/history', a: '/admin', ',': '/settings' }; if (map[e.key]) navigate(map[e.key]); pendingG = false; return; }
+      if (pendingG) { const map = { h: '/', s: '/screen', y: '/history', i: '/investigations', r: '/reports', a: '/admin', ',': '/settings' }; if (map[e.key]) navigate(map[e.key]); pendingG = false; return; }
       if (e.key === 'n') navigate('/screen');
     };
     window.addEventListener('keydown', fn);
@@ -43,74 +50,89 @@ export default function AppShell() {
 
   const onSignOut = async () => { await signOut(); navigate('/login'); };
 
-  const linkCls = ({ isActive }) => cx('group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition', isActive ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white', collapsed && 'justify-center px-0');
+  const link = ({ isActive }) => cx('flex items-center gap-3 rounded-sm px-2.5 py-2 text-sm transition-colors', isActive ? 'bg-[var(--brand-soft)] font-medium text-[var(--ink)]' : 'muted hover:bg-[var(--surface-2)] hover:text-[var(--ink)]', collapsed && 'justify-center px-0');
 
-  const SidebarContent = ({ mobile = false }) => (
-    <>
-      <div className={cx('flex items-center gap-3 px-4 py-5', collapsed && !mobile && 'justify-center px-0')}>
-        <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-lg shadow-brand-600/40"><ShieldCheck className="h-5 w-5" /></span>
-        {(!collapsed || mobile) && <div className="min-w-0"><p className="truncate text-base font-bold leading-tight text-white">BorderScreen</p><p className="truncate text-[11px] text-slate-400">MHA · SSB · PS 26188</p></div>}
-        {mobile && <button className="ml-auto rounded-lg p-2 text-slate-400 hover:text-white" onClick={() => setOpen(false)} aria-label="Close menu"><X className="h-5 w-5" /></button>}
-      </div>
-      <nav className="flex-1 space-y-1 px-3">
-        {items.map((n) => (
-          <NavLink key={n.to} to={n.to} end={n.end} className={linkCls} onClick={() => setOpen(false)} title={n.label}>
-            {({ isActive }) => (<>
-              {isActive && <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-brand-500" />}
-              <n.icon className={cx('h-5 w-5 shrink-0', n.primary && !isActive && 'text-brand-400')} />
-              {(!collapsed || mobile) && <span className="flex-1">{n.label}</span>}
-              {(!collapsed || mobile) && n.primary && <Kbd>N</Kbd>}
-            </>)}
-          </NavLink>
-        ))}
-      </nav>
-      <div className="border-t border-white/10 p-3">
-        <div className={cx('flex items-center gap-3 rounded-xl px-2 py-2', collapsed && !mobile && 'justify-center px-0')}>
-          <Avatar name={user?.displayName} size="sm" />
-          {(!collapsed || mobile) && <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-white">{user?.displayName}</p><p className="truncate text-[11px] text-slate-400">{user?.role} · {settings.checkpoint}</p></div>}
-          {(!collapsed || mobile) && <button onClick={onSignOut} className="rounded-lg p-2 text-slate-400 hover:bg-white/5 hover:text-white" title="Sign out" aria-label="Sign out"><LogOut className="h-4 w-4" /></button>}
+  const Nav = ({ mobile = false }) => (
+    <nav className="flex-1 overflow-y-auto px-3 py-2" aria-label="Primary">
+      {groups.map((g) => (
+        <div key={g} className="mb-4">
+          {(!collapsed || mobile) && <p className="mb-1 px-2.5 t-label">{g}</p>}
+          <ul className="space-y-0.5">
+            {items.filter((n) => n.group === g).map((n) => (
+              <li key={n.to}>
+                <NavLink to={n.to} end={n.end} className={link} onClick={() => setOpen(false)} title={collapsed && !mobile ? n.label : undefined} aria-label={collapsed && !mobile ? n.label : undefined}>
+                  <n.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  {(!collapsed || mobile) && <span className="flex-1 truncate">{n.label}</span>}
+                  {(!collapsed || mobile) && n.kbd && <Kbd>{n.kbd}</Kbd>}
+                </NavLink>
+              </li>
+            ))}
+          </ul>
         </div>
-        {!mobile && <button onClick={() => setCollapsed((c) => !c)} className="mt-1 flex w-full items-center justify-center gap-2 rounded-lg py-1.5 text-xs text-slate-500 hover:bg-white/5 hover:text-white">{collapsed ? <ChevronsRight className="h-4 w-4" /> : <><ChevronsLeft className="h-4 w-4" />Collapse</>}</button>}
+      ))}
+    </nav>
+  );
+
+  const UserBlock = ({ mobile = false }) => (
+    <div className="border-t divider p-3">
+      <div className={cx('flex items-center gap-2.5', collapsed && !mobile && 'justify-center')}>
+        <Avatar name={user?.displayName} size="sm" />
+        {(!collapsed || mobile) && <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{user?.displayName}</p><p className="truncate t-caption">{user?.role} · {settings.checkpoint}</p></div>}
+        {(!collapsed || mobile) && <button onClick={onSignOut} className="btn-ghost btn-icon" title="Sign out" aria-label="Sign out"><LogOut className="h-4 w-4" aria-hidden="true" /></button>}
       </div>
-    </>
+      {!mobile && <button onClick={() => setCollapsed((c) => !c)} className="mt-2 flex w-full items-center justify-center gap-2 rounded-sm py-1.5 t-caption hover:bg-[var(--surface-2)]" aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}>{collapsed ? <ChevronsRight className="h-4 w-4" aria-hidden="true" /> : <><ChevronsLeft className="h-4 w-4" aria-hidden="true" />Collapse</>}</button>}
+    </div>
   );
 
   return (
     <div className="flex min-h-dvh">
-      <aside className={cx('sticky top-0 hidden h-dvh shrink-0 flex-col bg-brand-900 transition-[width] duration-200 lg:flex', collapsed ? 'w-[72px]' : 'w-64')}><SidebarContent /></aside>
+      {/* Desktop / tablet rail */}
+      <aside className={cx('sticky top-0 hidden h-dvh shrink-0 flex-col border-r divider bg-[var(--surface)] transition-[width] duration-150 md:flex', collapsed ? 'w-16' : 'w-60')}>
+        <div className={cx('flex h-14 items-center border-b divider px-4', collapsed && 'justify-center px-0')}>
+          {collapsed ? <LogoMark size={22} className="text-[var(--brand)]" /> : <Logo size="sm" />}
+        </div>
+        <Nav />
+        <UserBlock />
+      </aside>
 
+      {/* Mobile drawer */}
       {open && (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <div className="absolute inset-0 bg-black/60 animate-fade-in" onClick={() => setOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[85%] flex-col bg-brand-900 shadow-2xl"><SidebarContent mobile /></aside>
+        <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
+          <div className="absolute inset-0 bg-[rgba(17,19,22,0.45)] animate-fade-in" onClick={() => setOpen(false)} />
+          <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[85%] flex-col overlay rounded-none">
+            <div className="flex h-14 items-center justify-between border-b divider px-4"><Logo size="sm" /><button className="btn-ghost btn-icon" onClick={() => setOpen(false)} aria-label="Close navigation"><X className="h-5 w-5" aria-hidden="true" /></button></div>
+            <Nav mobile />
+            <UserBlock mobile />
+          </aside>
         </div>
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b divider glass px-3 sm:px-6">
-          <button className="btn-ghost btn-icon lg:hidden" onClick={() => setOpen(true)} aria-label="Open menu"><Menu className="h-5 w-5" /></button>
-          <Link to="/" className="flex items-center gap-2 lg:hidden"><ShieldCheck className="h-5 w-5 text-brand-500" /><span className="font-bold">BorderScreen</span></Link>
-          <button onClick={() => navigate('/history')} className="ml-2 hidden min-h-9 items-center gap-2 rounded-lg border divider bg-[var(--surface-2)] px-3 text-xs muted hover:text-[var(--ink)] md:flex"><Search className="h-3.5 w-3.5" />Search screenings…<span className="ml-4 flex gap-1"><Kbd>G</Kbd><Kbd>Y</Kbd></span></button>
-          <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-            {!online && <span className="badge bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300"><WifiOff className="h-3.5 w-3.5" /><span className="hidden sm:inline">Offline</span></span>}
-            {isDemoMode && <span className="badge bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"><FlaskConical className="h-3.5 w-3.5" /><span className="hidden sm:inline">Demo mode</span></span>}
-            <span className="hidden rounded-lg border divider px-2 py-1 font-mono text-[11px] muted sm:inline">{settings.checkpoint}</span>
-            <button onClick={toggle} className="btn-ghost btn-icon" aria-label="Toggle theme" title="Toggle theme">{isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}</button>
+        {/* Top bar: context, not chrome */}
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b divider bg-[var(--surface)] page-gutter">
+          <button className="btn-ghost btn-icon md:hidden" onClick={() => setOpen(true)} aria-label="Open navigation"><Menu className="h-5 w-5" aria-hidden="true" /></button>
+          <span className="md:hidden"><Logo size="sm" /></span>
+          <div className="ml-auto flex items-center gap-2">
+            {!online && <span className="badge badge-danger"><WifiOff className="h-3.5 w-3.5" aria-hidden="true" /><span className="hidden sm:inline">Offline</span></span>}
+            {isDemoMode && <span className="badge badge-warn"><FlaskConical className="h-3.5 w-3.5" aria-hidden="true" /><span className="hidden sm:inline">Demo environment</span></span>}
+            <span className="hidden t-caption sm:inline">Checkpoint <span className="t-code text-[var(--ink)]">{settings.checkpoint}</span></span>
+            <button onClick={toggle} className="btn-ghost btn-icon" aria-label="Toggle theme" title="Toggle theme">{isDark ? <Sun className="h-4 w-4" aria-hidden="true" /> : <Moon className="h-4 w-4" aria-hidden="true" />}</button>
           </div>
         </header>
 
-        <main className="flex-1 px-4 pb-28 pt-5 sm:px-6 sm:pt-6 lg:px-8 lg:pb-10">
+        <main className="flex-1 page-gutter pb-24 pt-6 md:pb-10">
           <div className="mx-auto w-full max-w-7xl"><Outlet /></div>
         </main>
 
-        <nav className="no-print fixed inset-x-0 bottom-0 z-30 border-t divider glass pb-[env(safe-area-inset-bottom)] lg:hidden">
-          <div className="grid" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
-            {items.map((n) => (
-              <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => cx('flex min-h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium transition', isActive ? 'text-brand-600 dark:text-brand-300' : 'muted')}>
-                {n.primary ? <span className="-mt-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-600 text-white shadow-lg shadow-brand-600/40 ring-4 ring-[var(--bg)]"><n.icon className="h-6 w-6" /></span> : <n.icon className="h-5 w-5" />}
-                {n.label}
+        {/* Mobile bottom tabs */}
+        <nav className="no-print fixed inset-x-0 bottom-0 z-30 sticky-bar pb-[env(safe-area-inset-bottom)] md:hidden" aria-label="Primary">
+          <div className="grid grid-cols-5">
+            {items.filter((n) => n.mobile).map((n) => (
+              <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => cx('flex min-h-14 flex-col items-center justify-center gap-1 text-[11px] font-medium', isActive ? 'text-[var(--brand)]' : 'muted')}>
+                <n.icon className="h-5 w-5" aria-hidden="true" />{n.short || n.label}
               </NavLink>
             ))}
+            <button type="button" onClick={() => setOpen(true)} className="flex min-h-14 flex-col items-center justify-center gap-1 text-[11px] font-medium muted"><MoreHorizontal className="h-5 w-5" aria-hidden="true" />More</button>
           </div>
         </nav>
       </div>

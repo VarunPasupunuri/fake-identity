@@ -15,6 +15,7 @@ const MODULES = [
   { key: 'ocr', label: 'OCR extraction' },
   { key: 'tamper', label: 'Tampering detection' },
   { key: 'face', label: 'Face verification' },
+  { key: 'watchlist', label: 'Watchlist screening' },
 ];
 
 export default function SettingsPage() {
@@ -35,7 +36,7 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <PageHeader title="Settings" subtitle="Device-level preferences for this checkpoint console." />
+      <PageHeader title="Settings" subtitle="Device-level preferences for this verification workstation." />
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Appearance" icon={Monitor}>
           <Segmented value={theme} onChange={setTheme} options={[{ value: 'light', label: <span className="flex items-center gap-1"><Sun className="h-3.5 w-3.5" />Light</span> }, { value: 'dark', label: <span className="flex items-center gap-1"><Moon className="h-3.5 w-3.5" />Dark</span> }, { value: 'system', label: <span className="flex items-center gap-1"><Laptop className="h-3.5 w-3.5" />System</span> }]} />
@@ -52,8 +53,8 @@ export default function SettingsPage() {
           <p className="mt-2 text-xs muted">Recorded on every screening created from this device. Used for admin breakdowns.</p>
         </Card>
 
-        <Card title="Screening modules" subtitle="Each module is swappable; the UI is provider-agnostic" icon={Cpu} className="lg:col-span-2">
-          <div className="grid gap-4 md:grid-cols-3">
+        <Card title="Verification modules" subtitle="Each module is provider-based and can be replaced without changing the workstation" icon={Cpu} className="lg:col-span-2">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {MODULES.map((m) => (
               <fieldset key={m.key}>
                 <legend className="label">{m.label}</legend>
@@ -83,7 +84,7 @@ export default function SettingsPage() {
 
         <Card title="Keyboard shortcuts" icon={Keyboard}>
           <ul className="grid grid-cols-2 gap-2 text-sm">
-            {[['N', 'New screening'], ['G H', 'Home'], ['G Y', 'History'], ['G A', 'Admin'], ['A / F / R', 'Accept / Flag / Reject on results'], ['Esc', 'Close panels']].map(([k, l]) => <li key={k} className="flex items-center justify-between rounded-lg bg-[var(--surface-2)] px-3 py-2"><span className="muted">{l}</span><span className="flex gap-1">{k.split(' ').map((x, i) => <Kbd key={i}>{x}</Kbd>)}</span></li>)}
+            {[['N', 'Screen document'], ['G H', 'Dashboard'], ['G Y', 'History'], ['G I', 'Investigations'], ['G R', 'Reports'], ['G A', 'Administration'], ['A / F / R', 'Approve / Review / Reject on results'], ['Esc', 'Close panels']].map(([k, l]) => <li key={k} className="flex items-center justify-between rounded-lg bg-[var(--surface-2)] px-3 py-2"><span className="muted">{l}</span><span className="flex gap-1">{k.split(' ').map((x, i) => <Kbd key={i}>{x}</Kbd>)}</span></li>)}
           </ul>
         </Card>
 
@@ -97,7 +98,7 @@ export default function SettingsPage() {
           </div>
         </Card>
       </div>
-      <p className="mt-6 flex items-center gap-1 text-xs faint"><Settings className="h-3 w-3" />BorderScreen v{__APP_VERSION__} · providers {settings.providers.ocr} / {settings.providers.tamper} / {settings.providers.face}</p>
+      <p className="mt-6 flex items-center gap-1 t-caption"><Settings className="h-3 w-3" aria-hidden="true" />Identity Sentinel v{__APP_VERSION__} · providers {settings.providers.ocr} / {settings.providers.tamper} / {settings.providers.face} / {settings.providers.watchlist}</p>
     </div>
   );
 }

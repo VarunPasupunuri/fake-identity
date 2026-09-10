@@ -16,12 +16,12 @@ import { toLegacyRisk } from '../modules/fusion/index.js';
 
 export const STEP_IDS = ['ocr', 'validation', 'tampering', 'face', 'watchlist', 'risk'];
 export const STEP_META = {
-  ocr: { label: 'OCR extraction', description: 'Reading printed text and MRZ' },
-  validation: { label: 'Document validation', description: 'Format rules, expiry, MRZ checksums' },
-  tampering: { label: 'Tampering detection', description: 'Error level analysis and metadata' },
-  face: { label: 'Face verification', description: 'Comparing live photo with document photo' },
-  watchlist: { label: 'Watchlist screening', description: 'Checking extracted identifiers against the configured list' },
-  risk: { label: 'Evidence fusion & risk', description: 'Correlating signals, scoring risk and confidence, deciding' },
+  ocr: { label: 'Document extraction', description: 'Extracting document information' },
+  validation: { label: 'Document validation', description: 'Checking document consistency' },
+  tampering: { label: 'Integrity analysis', description: 'Analysing document integrity' },
+  face: { label: 'Face comparison', description: 'Comparing facial features' },
+  watchlist: { label: 'Watchlist screening', description: 'Screening identifiers against the configured list' },
+  risk: { label: 'Risk assessment', description: 'Correlating verification evidence and calculating risk' },
 };
 
 export const initialSteps = () => Object.fromEntries(STEP_IDS.map((id) => [id, { status: 'pending', progress: 0, message: '', durationMs: null, error: null }]));

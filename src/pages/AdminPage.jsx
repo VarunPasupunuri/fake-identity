@@ -35,7 +35,7 @@ export default function AdminPage() {
 
   return (
     <div>
-      <PageHeader title="Admin dashboard" subtitle={rows ? `All checkpoints · ${rows.length} screenings loaded` : 'Loading…'} actions={<button className="btn-secondary btn-sm" disabled={!rows?.length} onClick={() => exportCsv(rows, `audit-${new Date().toISOString().slice(0, 10)}.csv`)}><Download className="h-4 w-4" />Export CSV</button>} />
+      <PageHeader title="Administration" subtitle={rows ? `All checkpoints · ${rows.length} cases loaded` : 'Loading…'} actions={<button className="btn-secondary btn-sm" disabled={!rows?.length} onClick={() => exportCsv(rows, `audit-${new Date().toISOString().slice(0, 10)}.csv`)}><Download className="h-4 w-4" aria-hidden="true" />Export CSV</button>} />
       <Tabs className="mb-5 max-w-xl" value={tab} onChange={setTab} tabs={[{ value: 'overview', label: 'Overview', icon: LayoutDashboard }, { value: 'audit', label: 'Audit log', icon: Files, count: rows?.length }, { value: 'officers', label: 'Officers', icon: Users }, { value: 'users', label: 'Users & roles', icon: UserCog }]} />
 
       {tab === 'overview' && (

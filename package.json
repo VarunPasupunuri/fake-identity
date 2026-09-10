@@ -1,8 +1,8 @@
 {
-  "name": "border-screen",
+  "name": "identity-sentinel",
   "private": true,
   "version": "0.1.0",
-  "description": "AI-Based Fake Identity & Document Screening System (SIH PS 26188, MHA/SSB)",
+  "description": "Identity Sentinel \u2014 Intelligent Identity & Document Verification Platform (SIH 2026, PS 26188)",
   "type": "module",
   "scripts": {
     "postinstall": "node scripts/copy-assets.mjs",

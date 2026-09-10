@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Upload, Camera, X, BookUser, Stamp, IdCard, Car, FileBadge, AlertTriangle, CheckCircle2, Loader2, Sparkles } from 'lucide-react';
+import { Upload, Camera, RefreshCw, BookUser, Stamp, IdCard, Car, FileBadge, AlertTriangle, CheckCircle2, Loader2, FolderOpen } from 'lucide-react';
 import { DOCUMENT_TYPES } from '../../modules/types.js';
 import { fileToDataUrl, resizeDataUrl } from '../../lib/image.js';
 import { assessImageQuality } from '../../lib/imageQuality.js';
+import { Alert } from '../ui/index.jsx';
+import DocumentCamera from './DocumentCamera.jsx';
 import { cx } from '../../lib/format.js';
 
 const ICONS = { passport: BookUser, visa: Stamp, national_id: IdCard, driving_license: Car, permit: FileBadge };
@@ -13,17 +15,25 @@ const HINTS = {
   driving_license: 'Front side. Ensure licence number and validity are legible.',
   permit: 'Include the permit number, validity dates and any stamps.',
 };
+const ACCEPT = 'image/jpeg,image/png,image/webp,image/*';
+const MAX_BYTES = 15 * 1024 * 1024;
 
+/**
+ * Step 1: document type + document source.
+ *   Scan with camera → real MediaDevices capture (DocumentCamera)
+ *   Upload file      → native file picker
+ * Both paths produce the same { dataUrl, file, name } object for the pipeline.
+ */
 export default function DocumentUpload({ documentType, onDocumentType, image, onImage, onNext, showGuide = true }) {
   const fileRef = useRef(null);
-  const camRef = useRef(null);
+  const [mode, setMode] = useState('choose'); // choose | camera
   const [drag, setDrag] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [quality, setQuality] = useState(null);
 
   useEffect(() => {
-    if (!image?.dataUrl) { setQuality(null); return; }
+    if (!image?.dataUrl) { setQuality(null); return undefined; }
     let live = true;
     assessImageQuality(image.dataUrl).then((q) => live && setQuality(q)).catch(() => live && setQuality(null));
     return () => { live = false; };
@@ -31,101 +41,125 @@ export default function DocumentUpload({ documentType, onDocumentType, image, on
 
   const handleFile = async (file) => {
     if (!file) return;
-    if (!file.type.startsWith('image/')) { setError('Please select an image file (JPG/PNG/HEIC exported as JPG).'); return; }
-    if (file.size > 15 * 1024 * 1024) { setError('Image is larger than 15 MB.'); return; }
+    if (!file.type.startsWith('image/')) { setError('Select an image file (JPG, PNG or WebP).'); return; }
+    if (file.size > MAX_BYTES) { setError('The image is larger than 15 MB.'); return; }
     setError(''); setBusy(true);
     try {
       const raw = await fileToDataUrl(file);
       const dataUrl = await resizeDataUrl(raw, 1600, 0.95);
-      onImage({ dataUrl, file, name: file.name });
+      onImage({ dataUrl, file, name: file.name, source: 'upload' });
+      setMode('choose');
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
 
+  const openPicker = () => { setMode('choose'); fileRef.current?.click(); };
+  const onCaptured = async (img) => {
+    setError('');
+    const dataUrl = await resizeDataUrl(img.dataUrl, 1600, 0.95).catch(() => img.dataUrl);
+    onImage({ ...img, dataUrl });
+    setMode('choose');
+  };
+
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-      <div className="space-y-5">
-        <div>
-          <p className="label">Document type</p>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="space-y-6">
+        {/* Document type */}
+        <fieldset>
+          <legend className="t-label mb-2">Document type</legend>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5" role="radiogroup" aria-label="Document type">
             {DOCUMENT_TYPES.map((d) => {
               const Icon = ICONS[d.value];
               const active = documentType === d.value;
               return (
-                <button key={d.value} type="button" onClick={() => onDocumentType(d.value)} className={cx('flex min-h-20 flex-col items-start justify-between rounded-xl border p-3 text-left transition', active ? 'border-brand-500 bg-brand-50 ring-2 ring-brand-500/20 dark:bg-brand-500/10' : 'divider bg-[var(--surface)] hover:bg-[var(--surface-2)]')}>
-                  <Icon className={cx('h-5 w-5', active ? 'text-brand-600 dark:text-brand-300' : 'faint')} />
-                  <span className="text-sm font-semibold">{d.label}</span>
-                  {d.hasMrz && <span className="text-[10px] font-medium faint">MRZ</span>}
+                <button key={d.value} type="button" role="radio" aria-checked={active} onClick={() => onDocumentType(d.value)}
+                  className={cx('flex min-h-11 items-center gap-2 rounded-md border px-3 text-left text-sm transition-colors', active ? 'border-[var(--brand)] bg-[var(--brand-soft)] font-medium text-[var(--ink)]' : 'border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-2)]')}>
+                  <Icon className={cx('h-4 w-4 shrink-0', active ? 'text-[var(--brand)]' : 'faint')} aria-hidden="true" />
+                  <span className="truncate">{d.label}</span>
                 </button>
               );
             })}
           </div>
-        </div>
+          <p className="mt-2 t-caption">{HINTS[documentType]}</p>
+        </fieldset>
 
+        {/* Document source */}
         <div>
-          <p className="label">Document image</p>
-          {!image ? (
-            <div
-              onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
-              onDrop={(e) => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files?.[0]); }}
-              className={cx('relative flex flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed px-6 py-12 text-center transition', drag ? 'border-brand-500 bg-brand-50 dark:bg-brand-500/10' : 'divider bg-[var(--surface)]')}
-            >
-              {showGuide && <div className="pointer-events-none absolute inset-6 rounded-xl border border-dashed border-brand-400/40"><span className="absolute -left-px -top-px h-6 w-6 rounded-tl-xl border-l-2 border-t-2 border-brand-500" /><span className="absolute -right-px -top-px h-6 w-6 rounded-tr-xl border-r-2 border-t-2 border-brand-500" /><span className="absolute -bottom-px -left-px h-6 w-6 rounded-bl-xl border-b-2 border-l-2 border-brand-500" /><span className="absolute -bottom-px -right-px h-6 w-6 rounded-br-xl border-b-2 border-r-2 border-brand-500" /></div>}
-              {busy ? <Loader2 className="mb-3 h-10 w-10 animate-spin text-brand-500" /> : <span className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300"><Camera className="h-7 w-7" /></span>}
-              <p className="text-sm font-semibold">Scan or drop the document here</p>
-              <p className="mt-1 max-w-sm text-xs muted">{HINTS[documentType]}</p>
-              <div className="mt-6 flex flex-col gap-2 sm:flex-row">
-                <button type="button" className="btn-primary" onClick={() => camRef.current?.click()}><Camera className="h-5 w-5" />Scan with camera</button>
-                <button type="button" className="btn-secondary" onClick={() => fileRef.current?.click()}><Upload className="h-5 w-5" />Upload file</button>
+          <p className="t-label mb-2">Document source</p>
+          <input ref={fileRef} type="file" accept={ACCEPT} className="hidden" aria-hidden="true" tabIndex={-1} onChange={(e) => { handleFile(e.target.files?.[0]); e.target.value = ''; }} />
+
+          {mode === 'camera' && !image && (
+            <DocumentCamera onCapture={onCaptured} onCancel={() => setMode('choose')} onUploadInstead={openPicker} />
+          )}
+
+          {mode === 'choose' && !image && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button type="button" onClick={() => { setError(''); setMode('camera'); }} className="surface flex min-h-32 flex-col items-start gap-2 p-4 text-left transition-colors hover:bg-[var(--surface-2)]">
+                <Camera className="h-5 w-5 text-[var(--brand)]" aria-hidden="true" />
+                <span className="t-h3">Scan with camera</span>
+                <span className="t-body-sm muted">Use the device camera to capture the document directly.</span>
+              </button>
+              <div
+                onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
+                onDrop={(e) => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files?.[0]); }}
+                className={cx('surface flex min-h-32 flex-col items-start gap-2 p-4 transition-colors', drag && 'border-[var(--brand)] bg-[var(--brand-soft)]')}>
+                <FolderOpen className="h-5 w-5 text-[var(--brand)]" aria-hidden="true" />
+                <span className="t-h3">Upload file</span>
+                <span className="t-body-sm muted">Choose an existing document image (JPG, PNG, WebP; up to 15 MB) or drop it here.</span>
+                <button type="button" className="btn-secondary btn-sm mt-auto" onClick={openPicker} disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Upload className="h-4 w-4" aria-hidden="true" />}Choose file</button>
               </div>
-              <input ref={camRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handleFile(e.target.files?.[0])} />
-              <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleFile(e.target.files?.[0])} />
             </div>
-          ) : (
-            <div className="card overflow-hidden animate-fade-in">
-              <div className="flex items-center justify-between border-b divider px-4 py-2 text-xs muted">
-                <span className="truncate">{image.name || 'Captured image'}{quality ? ` · ${quality.width}×${quality.height}` : ''}</span>
-                <button type="button" className="btn-ghost btn-sm" onClick={() => onImage(null)}><X className="h-4 w-4" />Replace</button>
-              </div>
-              <div className="relative flex justify-center bg-slate-950 p-2">
-                <img src={image.dataUrl} alt="Document" className="max-h-[380px] w-auto max-w-full rounded-lg object-contain" />
-                {quality && (
-                  <span className={cx('absolute left-4 top-4 badge', quality.issues.length ? 'bg-amber-500 text-white' : 'bg-emerald-500 text-white')}>
-                    {quality.issues.length ? <AlertTriangle className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}Quality {quality.score}
+          )}
+
+          {image && (
+            <section className="surface overflow-hidden" aria-label="Selected document">
+              <header className="flex flex-wrap items-center justify-between gap-2 border-b divider px-4 py-2.5">
+                <span className="t-caption truncate">{image.source === 'camera' ? 'Captured with camera' : image.name || 'Uploaded image'}{quality ? ` · ${quality.width} × ${quality.height}` : ''}</span>
+                <div className="flex gap-1">
+                  {image.source === 'camera' && <button type="button" className="btn-ghost btn-sm" onClick={() => { onImage(null); setMode('camera'); }}><RefreshCw className="h-4 w-4" aria-hidden="true" />Retake</button>}
+                  <button type="button" className="btn-ghost btn-sm" onClick={() => { onImage(null); setMode('choose'); }}>Choose another</button>
+                </div>
+              </header>
+              <div className="relative flex justify-center bg-[var(--surface-2)] p-3">
+                <img src={image.dataUrl} alt="Document" className="max-h-[380px] w-auto max-w-full rounded-sm hairline object-contain" />
+                {showGuide && quality && (
+                  <span className={cx('badge absolute left-4 top-4', quality.issues.length ? 'badge-warn' : 'badge-ok')}>
+                    {quality.issues.length ? <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" /> : <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />}Image quality {quality.score}
                   </span>
                 )}
               </div>
-              {quality?.issues.length > 0 && (
+              {showGuide && quality?.issues.length > 0 && (
                 <ul className="divide-y divider border-t divider">
-                  {quality.issues.map((i) => <li key={i.id} className="flex items-start gap-2 px-4 py-2 text-xs"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" /><span><span className="font-semibold">{i.label}.</span> <span className="muted">{i.hint}</span></span></li>)}
+                  {quality.issues.map((i) => <li key={i.id} className="flex items-start gap-2 px-4 py-2 t-body-sm"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 status-warn" aria-hidden="true" /><span><span className="font-medium">{i.label}.</span> <span className="muted">{i.hint}</span></span></li>)}
                 </ul>
               )}
-            </div>
+            </section>
           )}
-          {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+          {error && <div className="mt-3"><Alert tone="danger">{error}</Alert></div>}
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex justify-end border-t divider pt-4">
           <button type="button" className="btn-primary sm:min-w-52" disabled={!image || busy} onClick={onNext}>Continue to live photo</button>
         </div>
       </div>
 
-      <aside className="space-y-3">
-        <div className="surface p-4">
-          <p className="flex items-center gap-2 text-sm font-semibold"><Sparkles className="h-4 w-4 text-brand-500" />Capture tips</p>
-          <ul className="mt-2 space-y-1.5 text-xs muted">
-            <li>• Lay the document flat on a dark, matte surface.</li>
-            <li>• Fill the frame; keep all four corners inside the guide.</li>
-            <li>• Avoid glare on laminates and holograms — tilt slightly.</li>
-            <li>• MRZ text must be crisp: OCR reads the two bottom lines first.</li>
+      <aside className="space-y-4 lg:border-l lg:divider lg:pl-6">
+        <div>
+          <p className="t-h3">Capture guidance</p>
+          <ul className="mt-2 space-y-1.5 t-body-sm muted">
+            <li>Lay the document flat on a dark, matte surface.</li>
+            <li>Fill the frame and keep all four corners visible.</li>
+            <li>Avoid glare on laminates and holograms; tilt slightly if needed.</li>
+            <li>MRZ lines must be sharp: they are read first.</li>
           </ul>
         </div>
-        <div className="surface p-4 text-xs muted">
-          <p className="font-semibold text-[var(--ink)]">What happens next</p>
-          <ol className="mt-2 list-decimal space-y-1 pl-4">
-            <li>Text and MRZ are extracted on this device.</li>
-            <li>Fields are validated against format and expiry rules.</li>
-            <li>The image is checked for splicing and edited metadata.</li>
-            <li>The live photo is matched against the document photo.</li>
+        <div>
+          <p className="t-h3">What happens next</p>
+          <ol className="mt-2 list-decimal space-y-1 pl-4 t-body-sm muted">
+            <li>Document text and MRZ are extracted.</li>
+            <li>Fields are checked against format and validity rules.</li>
+            <li>The image is analysed for alteration and edited metadata.</li>
+            <li>The live photo is compared with the document photo.</li>
+            <li>Identifiers are screened against the configured watchlist.</li>
           </ol>
         </div>
       </aside>
