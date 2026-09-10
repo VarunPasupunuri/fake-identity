@@ -10,9 +10,18 @@ vi.mock('@supabase/supabase-js', () => ({ createClient }));
 
 // dataUrlToBlob needs atob/Blob — Node 22 has both, so no image.js mock is required.
 
+const SUPABASE_ENV_KEYS = ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'VITE_SUPABASE_STORAGE_BUCKET'];
+
+/**
+ * Load a fresh copy of storage.js with an explicitly controlled environment.
+ * Vite feeds the developer's local .env into import.meta.env during tests, so every
+ * Supabase variable is first forced to '' and only the values passed here are set.
+ * Tests therefore behave the same whether or not a .env file exists on the machine.
+ */
 async function loadStorage(env = {}) {
   vi.resetModules();
   vi.unstubAllEnvs();
+  for (const k of SUPABASE_ENV_KEYS) vi.stubEnv(k, '');
   for (const [k, v] of Object.entries(env)) vi.stubEnv(k, v);
   return import('./storage.js');
 }
