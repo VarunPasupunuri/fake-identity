@@ -35,3 +35,25 @@ export function decisionLabel(value) {
   const v = fromLegacyDecision(value);
   return v ? DECISION_LABEL[v] : 'Pending';
 }
+
+/**
+ * Project a FusionResult onto the legacy RiskResult shape
+ * ({ score, level, factors, recommendation, summary }) that the results UI,
+ * history, admin statistics and CSV export already consume. The fusion engine is
+ * the single risk engine; this is only a view of its output.
+ */
+export function toLegacyRisk(fusion) {
+  if (!fusion) return null;
+  const factors = (fusion.risk?.contributions || []).map((c) => ({ id: c.id, label: c.label, points: c.points, source: c.source, detail: c.detail || c.label }));
+  const top = factors.filter((f) => f.points > 0).slice(0, 3);
+  return {
+    score: fusion.risk?.score ?? 0,
+    level: fusion.risk?.level ?? 'low',
+    factors,
+    recommendation: toLegacyDecision(fusion.decision) || 'flag',
+    summary: top.length ? `Driven by: ${top.map((f) => f.label.replace(/\.$/, '')).join(', ')}.` : fusion.rationale || 'No issues detected across validation, tampering and face verification.',
+    engine: 'fusion',
+    decision: fusion.decision,
+    confidence: fusion.confidence?.score ?? null,
+  };
+}

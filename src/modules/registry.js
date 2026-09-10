@@ -9,6 +9,7 @@ import { runTamperingDetection, TAMPER_PROVIDERS } from './tampering/index.js';
 import { runFaceVerification, FACE_PROVIDERS } from './face/index.js';
 import { validateDocument } from './validation/index.js';
 import { computeRisk } from './risk/index.js';
+import { fuseEvidence } from './fusion/index.js';
 import { isFirebaseConfigured } from '../lib/firebase.js';
 
 function pick(envValue, available, fallback) {
@@ -60,5 +61,8 @@ export const modules = {
   validation: validateDocument,
   tampering: runTamperingDetection,
   face: runFaceVerification,
+  /** Evidence fusion: correlation, risk + confidence, four-way decision (used by the pipeline). */
+  fusion: fuseEvidence,
+  /** Legacy weighted-sum risk engine, kept for interpreting older records; not called by the pipeline. */
   risk: computeRisk,
 };

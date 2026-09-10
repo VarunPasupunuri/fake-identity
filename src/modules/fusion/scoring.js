@@ -18,7 +18,7 @@ export function scoreRisk(evidence, correlations) {
   for (const e of evidence) {
     if (!e.riskContribution) continue;
     perSource[e.source] = (perSource[e.source] || 0) + e.riskContribution;
-    contributions.push({ id: e.id, source: e.source, points: e.riskContribution, label: e.explanation });
+    contributions.push({ id: e.id, source: e.source, points: e.riskContribution, label: e.label || e.explanation, detail: e.explanation });
   }
   const caps = [];
   const capFor = { validation: RISK.validation.cap, tampering: RISK.tampering.cap + RISK.tampering.highFlag * 3, face: RISK.face.cap + RISK.face.noMatch };
@@ -31,7 +31,7 @@ export function scoreRisk(evidence, correlations) {
   for (const c of correlations) {
     if (!c.riskContribution) continue;
     corrPts += c.riskContribution;
-    contributions.push({ id: c.id, source: 'fusion', points: c.riskContribution, label: c.label });
+    contributions.push({ id: c.id, source: 'fusion', points: c.riskContribution, label: c.label, detail: c.explanation });
   }
   if (corrPts > RISK.correlation.cap) { caps.push({ source: 'fusion', raw: corrPts, cap: RISK.correlation.cap }); corrPts = RISK.correlation.cap; }
   total += corrPts;

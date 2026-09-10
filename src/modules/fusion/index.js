@@ -36,7 +36,7 @@ import { DECISION, DECISION_LABEL, STATUS } from './constants.js';
 import { toLegacyDecision } from './compat.js';
 
 export { DECISION, DECISION_LABEL } from './constants.js';
-export { fromLegacyDecision, toLegacyDecision, normaliseDecision, decisionLabel } from './compat.js';
+export { fromLegacyDecision, toLegacyDecision, normaliseDecision, decisionLabel, toLegacyRisk } from './compat.js';
 
 /** Mark evidence as resolved by the officer: it no longer fails and contributes no risk. */
 function clearEvidence(evidence, ids) {
