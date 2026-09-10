@@ -7,6 +7,7 @@ import { useToast } from '../context/ToastContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { PROVIDER_OPTIONS } from '../modules/registry.js';
 import { isFirebaseConfigured } from '../lib/firebase.js';
+import { isSupabaseConfigured, STORAGE_BUCKET } from '../services/storage.js';
 import { demoStore } from '../services/demoStore.js';
 import { cx } from '../lib/format.js';
 
@@ -88,7 +89,7 @@ export default function SettingsPage() {
 
         <Card title="Data" icon={Trash2} className="lg:col-span-2">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div><p className="text-sm font-medium">Environment</p><p className="text-xs muted">{isDemoMode ? 'Demo mode — screenings are stored in this browser only.' : `Connected to Firebase project ${import.meta.env.VITE_FIREBASE_PROJECT_ID}.`}</p></div>
+            <div><p className="text-sm font-medium">Environment</p><p className="text-xs muted">{isDemoMode ? 'Demo mode — screenings are stored in this browser only.' : `Connected to Firebase project ${import.meta.env.VITE_FIREBASE_PROJECT_ID}.`}</p><p className="text-xs muted">Image storage: {isDemoMode ? 'inline (browser)' : isSupabaseConfigured ? `Supabase private bucket "${STORAGE_BUCKET}" (signed URLs)` : 'NOT configured — images fall back to inline storage'}</p></div>
             <div className="flex gap-2">
               <button className="btn-secondary btn-sm" onClick={() => { reset(); toast.info('Settings reset to defaults'); }}>Reset settings</button>
               {isDemoMode && <button className="btn-danger btn-sm" onClick={() => { if (confirm('Delete all demo screenings stored in this browser?')) { demoStore.clear('screenings'); toast.success('Demo data cleared'); } }}>Clear demo data</button>}

@@ -1,11 +1,17 @@
 /**
  * Auth service. Real Firebase Auth when configured; a local demo login otherwise.
- * Roles: 'officer' | 'admin'. Role comes from a custom claim if present, else users/{uid}.role.
+ * Roles: 'officer' | 'admin'. Role comes from the `app_role` custom claim if present,
+ * else users/{uid}.role. (The `role` claim is reserved: Supabase third-party auth
+ * expects it to be 'authenticated'.)
  */
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut as fbSignOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { auth, db, isDemoMode, callFunction } from '../lib/firebase.js';
 import { demoStore } from './demoStore.js';
+import { setStorageTokenProvider } from './storage.js';
+
+// Supabase Storage authenticates with the Firebase ID token (third-party auth).
+if (!isDemoMode) setStorageTokenProvider(async () => (auth?.currentUser ? auth.currentUser.getIdToken() : null));
 
 export const DEMO_USERS = [
   { uid: 'demo-officer', email: 'officer@demo.gov', password: 'demo1234', displayName: 'Officer R. Singh', role: 'officer', checkpoint: 'CP-DEMO-01' },
@@ -31,7 +37,7 @@ export function subscribeAuth(cb) {
 
 async function buildProfile(fbUser) {
   const token = await fbUser.getIdTokenResult();
-  let role = token.claims.role || null;
+  let role = appRoleFromClaims(token.claims);
   let profile = {};
   const ref = doc(db, 'users', fbUser.uid);
   const snap = await getDoc(ref);
@@ -42,6 +48,13 @@ async function buildProfile(fbUser) {
 }
 
 const publicUser = ({ password, ...u }) => u; // eslint-disable-line no-unused-vars
+
+/** Read the application role from Firebase custom claims (legacy `role` values still honoured). */
+export function appRoleFromClaims(claims = {}) {
+  if (claims.app_role === 'admin' || claims.app_role === 'officer') return claims.app_role;
+  if (claims.role === 'admin' || claims.role === 'officer') return claims.role;
+  return null;
+}
 
 export async function signIn(email, password) {
   if (isDemoMode) {

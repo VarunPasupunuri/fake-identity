@@ -48,7 +48,7 @@ export default function ScreeningPage() {
     const out = await pipeline.run({ documentType, documentImage: docImage.dataUrl, documentFile: docImage.file, liveImage: liveImage?.dataUrl, options: { useMock, scenario, providers: settings.providers } });
     if (!out) { startedRef.current = false; return; }
     try {
-      const id = await createScreening({ user: { ...user, checkpoint: settings.checkpoint }, documentType, images: { document: docImage.dataUrl, live: liveImage?.dataUrl }, ...out });
+      const id = await createScreening({ user: { ...user, checkpoint: settings.checkpoint }, documentType, images: { document: docImage.dataUrl, live: liveImage?.dataUrl }, ...out, onWarning: (msg) => toast.warn('Image storage fallback', msg) });
       setScreeningId(id);
     } catch (e) {
       console.error(e);

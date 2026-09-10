@@ -3,38 +3,60 @@
  * checkpoint, timestamp, decision, and the complete output of every module.
  */
 import { doc, setDoc, getDoc, updateDoc, serverTimestamp, collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage, isDemoMode, CHECKPOINT_ID } from '../lib/firebase.js';
+import { db, isDemoMode, CHECKPOINT_ID } from '../lib/firebase.js';
 import { demoStore, newId } from './demoStore.js';
-import { dataUrlToBlob, resizeDataUrl } from '../lib/image.js';
+import { resizeDataUrl } from '../lib/image.js';
+import { uploadDocument, buildScreeningPath, isSupabaseConfigured } from './storage.js';
 
 const COLLECTION = 'screenings';
 
-/** Upload document + live images. In demo mode returns compact inline data URLs. */
+/**
+ * Store the document + live images for a screening.
+ *
+ *  - Supabase configured → upload to the private bucket and return object PATHS
+ *    (the Firestore record never holds a URL; viewers request signed URLs).
+ *  - Demo mode, or Supabase missing/failing → compact inline data URLs so the
+ *    screening is never lost. `warning` explains the fallback to the officer.
+ *
+ * @returns {Promise<{ documentImagePath: string|null, liveImagePath: string|null,
+ *   documentImageUrl: string|null, liveImageUrl: string|null, imageStorage: 'supabase'|'inline', warning?: string }>}
+ */
 export async function uploadScreeningImages({ uid, screeningId, documentImage, liveImage }) {
-  if (isDemoMode) {
-    return {
-      documentImageUrl: await resizeDataUrl(documentImage, 700, 0.7),
-      liveImageUrl: liveImage ? await resizeDataUrl(liveImage, 500, 0.7) : null,
+  const inline = async (warning) => ({
+    documentImagePath: null,
+    liveImagePath: null,
+    documentImageUrl: documentImage ? await resizeDataUrl(documentImage, 700, 0.7) : null,
+    liveImageUrl: liveImage ? await resizeDataUrl(liveImage, 500, 0.7) : null,
+    imageStorage: 'inline',
+    ...(warning ? { warning } : {}),
+  });
+  if (isDemoMode) return inline();
+  if (!isSupabaseConfigured) return inline('Supabase Storage is not configured — images were stored inline with the record.');
+
+  try {
+    const put = async (kind, dataUrl) => {
+      if (!dataUrl) return null;
+      const path = buildScreeningPath({ officerUid: uid, screeningId, kind });
+      const res = await uploadDocument(dataUrl, path);
+      return res.path;
     };
+    const [documentImagePath, liveImagePath] = await Promise.all([put('document', documentImage), put('live', liveImage)]);
+    return { documentImagePath, liveImagePath, documentImageUrl: null, liveImageUrl: null, imageStorage: 'supabase' };
+  } catch (e) {
+    console.error('[screenings] image upload failed, storing inline', e);
+    return inline(`Image upload failed (${e.message}) — images were stored inline with the record.`);
   }
-  const put = async (name, dataUrl) => {
-    if (!dataUrl) return null;
-    const r = ref(storage, `screenings/${uid}/${screeningId}/${name}.jpg`);
-    await uploadBytes(r, dataUrlToBlob(dataUrl), { contentType: 'image/jpeg' });
-    return getDownloadURL(r);
-  };
-  const [documentImageUrl, liveImageUrl] = await Promise.all([put('document', documentImage), put('live', liveImage)]);
-  return { documentImageUrl, liveImageUrl };
 }
 
 /**
  * Persist a completed screening (module outputs) — decision may be added later.
  * @returns {Promise<string>} screening id
  */
-export async function createScreening({ user, documentType, images, ocr, validation, tampering, face, risk, providers }) {
+export async function createScreening({ user, documentType, images, ocr, validation, tampering, face, risk, providers, onWarning }) {
   const id = newId();
-  const { documentImageUrl, liveImageUrl } = await uploadScreeningImages({ uid: user.uid, screeningId: id, documentImage: images.document, liveImage: images.live });
+  const stored = await uploadScreeningImages({ uid: user.uid, screeningId: id, documentImage: images.document, liveImage: images.live });
+  if (stored.warning) onWarning?.(stored.warning);
+  const { documentImagePath, liveImagePath, documentImageUrl, liveImageUrl, imageStorage } = stored;
 
   const record = {
     id,
@@ -45,12 +67,18 @@ export async function createScreening({ user, documentType, images, ocr, validat
     subjectName: ocr?.fields?.fullName || null,
     documentNumber: ocr?.fields?.documentNumber || ocr?.fields?.visaNumber || null,
     nationality: ocr?.fields?.nationality || null,
+    // Object paths in the private Supabase bucket (resolved to signed URLs when viewed) …
+    documentImagePath,
+    liveImagePath,
+    imageStorage,
+    // … or inline data URLs in demo mode / storage fallback.
     documentImageUrl,
     liveImageUrl,
-    // Evidence images can be large — keep the ELA heat-map out of Firestore (1 MiB doc limit) unless small.
+    // Evidence images can be large — keep the ELA heat-map out of Firestore (1 MiB doc limit) unless small,
+    // and drop it entirely when the record already carries inline images.
     ocr: ocr ? stripUndefined(ocr) : null,
     validation,
-    tampering: tampering ? stripUndefined({ ...tampering, evidence: { ...tampering.evidence, elaImage: tampering.evidence?.elaImage && tampering.evidence.elaImage.length < 300000 ? tampering.evidence.elaImage : null } }) : null,
+    tampering: tampering ? stripUndefined({ ...tampering, evidence: { ...tampering.evidence, elaImage: imageStorage !== 'inline' && tampering.evidence?.elaImage && tampering.evidence.elaImage.length < 300000 ? tampering.evidence.elaImage : null } }) : null,
     face: face ? stripUndefined(face) : null,
     risk: risk || null,
     providers,
@@ -107,7 +135,7 @@ export function seedDemoData(user) {
     subjectName: ['ANITA SHARMA', 'DIPAK ROY', 'SUNITA THAPA', 'RAHUL VERMA', 'TENZIN DORJI', 'K. LAMA'][i % 6],
     documentNumber: ['M8412345', 'VS2298811', '4471-2209-118', 'MH1220110012345', 'BAP-2026-00918', 'N7710022'][i % 6],
     nationality: ['IND', 'BGD', 'NPL', 'IND', 'BTN', 'NPL'][i % 6],
-    documentImageUrl: null, liveImageUrl: null, ocr: { fields: {}, confidence: 0.9, provider: 'seed' }, validation: { checks: [], passed: 6, failed: 0, warnings: 0, ok: true },
+    documentImagePath: null, liveImagePath: null, imageStorage: 'inline', documentImageUrl: null, liveImageUrl: null, ocr: { fields: {}, confidence: 0.9, provider: 'seed' }, validation: { checks: [], passed: 6, failed: 0, warnings: 0, ok: true },
     tampering: { score: 6, flags: [], evidence: {} }, face: { confidence: 90, match: true, documentFaceFound: true, liveFaceFound: true }, providers: { ocr: 'seed', tamper: 'seed', face: 'seed' },
     risk: { score: 8, level: 'low', factors: [], recommendation: 'accept', summary: 'No issues detected.' },
     decision: 'accept', decisionNote: null, status: 'decided',

@@ -8,6 +8,7 @@ import { Stat, Card, RiskBadge, DecisionBadge, EmptyState, Skeleton, Kbd } from 
 import { Sparkline, BarChart, Donut, VIZ } from '../components/charts/index.jsx';
 import { DOCUMENT_TYPE_LABEL } from '../modules/types.js';
 import { timeAgo, lastNDays } from '../lib/format.js';
+import { useDocumentThumbnails } from '../hooks/useScreeningImages.js';
 
 export default function HomePage() {
   const { user, isAdmin } = useAuth();
@@ -15,6 +16,7 @@ export default function HomePage() {
   const [rows, setRows] = useState(null);
 
   useEffect(() => { listScreenings({ user, mine: !isAdmin, max: 300 }).then(setRows).catch(() => setRows([])); }, [user, isAdmin]);
+  const thumbs = useDocumentThumbnails(rows ? rows.slice(0, 6) : []);
   const stats = rows ? computeStats(rows) : null;
   const days = useMemo(() => (rows ? lastNDays(rows, 7) : []), [rows]);
   const trend = days.map((d) => d.rows.length);
@@ -73,7 +75,7 @@ export default function HomePage() {
             {rows.slice(0, 6).map((r, i) => (
               <li key={r.id} className="animate-slide-up" style={{ animationDelay: `${i * 40}ms` }}>
                 <Link to={`/history/${r.id}`} className="flex items-center gap-3 px-4 py-3 transition hover:bg-[var(--surface-2)] sm:px-5">
-                  {r.documentImageUrl ? <img src={r.documentImageUrl} alt="" className="hidden h-10 w-14 rounded-md object-cover sm:block" /> : <span className="hidden h-10 w-14 items-center justify-center rounded-md bg-[var(--surface-2)] sm:flex"><Files className="h-4 w-4 faint" /></span>}
+                  {thumbs[r.id] ? <img src={thumbs[r.id]} alt="" className="hidden h-10 w-14 rounded-md object-cover sm:block" /> : <span className="hidden h-10 w-14 items-center justify-center rounded-md bg-[var(--surface-2)] sm:flex"><Files className="h-4 w-4 faint" /></span>}
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold">{r.subjectName || 'Unknown subject'}</p>
                     <p className="truncate text-xs muted">{DOCUMENT_TYPE_LABEL[r.documentType]} · <span className="font-mono">{r.documentNumber || '—'}</span> · {timeAgo(r.createdAt)}{isAdmin ? ` · ${r.officerName}` : ''}</p>

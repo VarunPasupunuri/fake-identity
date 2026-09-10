@@ -8,6 +8,7 @@ import { RiskBadge, DecisionBadge, EmptyState, Skeleton, PageHeader, Segmented }
 import { DOCUMENT_TYPES, DOCUMENT_TYPE_LABEL } from '../modules/types.js';
 import { formatDateTime, timeAgo, cx } from '../lib/format.js';
 import { toCsv, downloadText } from '../lib/csv.js';
+import { useDocumentThumbnails } from '../hooks/useScreeningImages.js';
 
 const RANGES = [{ value: 'all', label: 'All time' }, { value: '1', label: 'Today' }, { value: '7', label: '7 days' }, { value: '30', label: '30 days' }];
 
@@ -37,12 +38,13 @@ export function ScreeningTable({ rows, showOfficer = false, compact = false }) {
 }
 
 export function ScreeningCards({ rows, showOfficer }) {
+  const thumbs = useDocumentThumbnails(rows);
   return (
     <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {rows.map((r, i) => (
         <li key={r.id} className="animate-slide-up" style={{ animationDelay: `${i * 30}ms` }}>
           <Link to={`/history/${r.id}`} className="card flex gap-3 p-3 transition hover:-translate-y-0.5 hover:shadow-md">
-            {r.documentImageUrl ? <img src={r.documentImageUrl} alt="" className="h-16 w-20 shrink-0 rounded-lg object-cover" /> : <span className="flex h-16 w-20 shrink-0 items-center justify-center rounded-lg bg-[var(--surface-2)]"><Files className="h-5 w-5 faint" /></span>}
+            {thumbs[r.id] ? <img src={thumbs[r.id]} alt="" className="h-16 w-20 shrink-0 rounded-lg object-cover" /> : <span className="flex h-16 w-20 shrink-0 items-center justify-center rounded-lg bg-[var(--surface-2)]"><Files className="h-5 w-5 faint" /></span>}
             <div className="min-w-0 flex-1">
               <div className="flex items-start justify-between gap-2"><p className="truncate text-sm font-semibold">{r.subjectName || 'Unknown'}</p><DecisionBadge decision={r.decision} /></div>
               <p className="truncate text-xs muted">{DOCUMENT_TYPE_LABEL[r.documentType]} · <span className="font-mono">{r.documentNumber || '—'}</span></p>

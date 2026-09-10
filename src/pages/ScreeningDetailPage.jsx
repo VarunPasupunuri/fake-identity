@@ -8,17 +8,19 @@ import { DOCUMENT_TYPE_LABEL } from '../modules/types.js';
 import { formatDateTime } from '../lib/format.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { downloadText } from '../lib/csv.js';
+import { useScreeningImages } from '../hooks/useScreeningImages.js';
 
 export default function ScreeningDetailPage() {
   const { id } = useParams();
   const toast = useToast();
   const [row, setRow] = useState(undefined);
   useEffect(() => { setRow(undefined); getScreening(id).then(setRow).catch(() => setRow(null)); }, [id]);
+  const images = useScreeningImages(row);
 
   if (row === undefined) return <div className="flex justify-center py-16"><Spinner className="h-8 w-8" /></div>;
   if (!row) return <EmptyState title="Screening not found" body="It may have been recorded by another officer or deleted." action={<Link to="/history" className="btn-secondary">Back to history</Link>} />;
 
-  const audit = { ...row, documentImageUrl: row.documentImageUrl ? '[image]' : null, liveImageUrl: row.liveImageUrl ? '[image]' : null, tampering: row.tampering && { ...row.tampering, evidence: { ...row.tampering.evidence, elaImage: row.tampering.evidence?.elaImage ? '[image]' : null } } };
+  const audit = { ...row, documentImageUrl: row.documentImageUrl ? '[inline image]' : null, liveImageUrl: row.liveImageUrl ? '[inline image]' : null, tampering: row.tampering && { ...row.tampering, evidence: { ...row.tampering.evidence, elaImage: row.tampering.evidence?.elaImage ? '[image]' : null } } };
   const timeline = [
     { t: row.createdAt, label: 'Screening created', body: `${DOCUMENT_TYPE_LABEL[row.documentType]} scanned by ${row.officerName} at ${row.checkpoint}` },
     row.ocr && { t: row.createdAt, label: 'Modules completed', body: `OCR ${row.providers?.ocr} · tampering ${row.providers?.tamper} · face ${row.providers?.face}` },
@@ -40,7 +42,7 @@ export default function ScreeningDetailPage() {
         <div className="surface flex items-center gap-3 p-3"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--surface-2)]"><Clock className="h-4 w-4 faint" /></span><div className="min-w-0"><p className="text-[11px] uppercase tracking-wider faint">Decision</p><p className="flex items-center gap-2 text-sm font-semibold"><DecisionBadge decision={row.decision} />{row.decidedAt && <span className="truncate text-xs font-normal muted">{formatDateTime(row.decidedAt)}</span>}</p></div></div>
       </div>
 
-      <ResultsView results={row} images={{ document: row.documentImageUrl, live: row.liveImageUrl }} />
+      <ResultsView results={row} images={images} />
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
         <section className="card p-5">

@@ -3,7 +3,7 @@
  *
  *  ocrExtract        callable  – Google Cloud Vision DOCUMENT_TEXT_DETECTION → raw text + confidence
  *  analyzeTampering  callable  – ELA (sharp) + EXIF (exifr) → { score, flags, evidence }
- *  setUserRole       callable  – admin-only: set custom claim + users/{uid}.role
+ *  setUserRole       callable  – admin-only: set custom claims (role=authenticated, app_role) + users/{uid}.role
  *  onScreeningCreated trigger  – maintains stats/summary counters for the admin dashboard
  *
  * Enable "Cloud Vision API" in the GCP project before deploying ocrExtract.
@@ -88,12 +88,13 @@ export const setUserRole = onCall(async (request) => {
   const auth = requireAuth(request);
   const db = getFirestore();
   const callerDoc = await db.doc(`users/${auth.uid}`).get();
-  const isAdmin = auth.token.role === 'admin' || callerDoc.data()?.role === 'admin';
+  const isAdmin = auth.token.app_role === 'admin' || callerDoc.data()?.role === 'admin';
   if (!isAdmin) throw new HttpsError('permission-denied', 'Admin role required.');
 
   const { uid, role, checkpoint } = request.data || {};
   if (!uid || !['officer', 'admin'].includes(role)) throw new HttpsError('invalid-argument', 'uid and role (officer|admin) are required.');
-  await getAuth().setCustomUserClaims(uid, { role });
+  // `role: 'authenticated'` is what Supabase third-party auth expects; the app role lives in `app_role`.
+  await getAuth().setCustomUserClaims(uid, { role: 'authenticated', app_role: role });
   await db.doc(`users/${uid}`).set({ role, ...(checkpoint ? { checkpoint } : {}), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
   return { ok: true };
 });
