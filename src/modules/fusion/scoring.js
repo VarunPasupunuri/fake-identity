@@ -54,14 +54,15 @@ export function computeConfidence(inputs, evidence) {
   if (!ocr || ocr.status === STATUS.UNAVAILABLE) add('ocr', 'Text extraction', 0, CONFIDENCE.ocr, 'OCR unavailable or no fields extracted');
   else add('ocr', 'Text extraction', CONFIDENCE.ocr * ocr.value.confidence, CONFIDENCE.ocr, `${Math.round(ocr.value.confidence * 100)}% OCR confidence`);
 
-  const needsMrz = MRZ_DOCUMENT_TYPES.includes(inputs.documentType);
-  if (!needsMrz) add('structure', 'Structural corroboration', CONFIDENCE.structure, CONFIDENCE.structure, 'Document type carries no MRZ');
+  const needsMrz = inputs.requirements?.mrz ?? MRZ_DOCUMENT_TYPES.includes(inputs.documentType);
+  if (!needsMrz) add('structure', 'Structural corroboration', CONFIDENCE.structure, CONFIDENCE.structure, ev['barcode:detected'] ? 'QR / barcode decoded' : 'Document type carries no MRZ');
   else if (ev['ocr:mrz']) add('structure', 'Structural corroboration', CONFIDENCE.structure, CONFIDENCE.structure, `MRZ ${ev['ocr:mrz'].value.format} parsed`);
   else add('structure', 'Structural corroboration', 0, CONFIDENCE.structure, 'MRZ expected but not read');
 
   add('tampering', 'Forensic analysis', ev['tampering:unavailable'] ? 0 : CONFIDENCE.tampering, CONFIDENCE.tampering, ev['tampering:unavailable'] ? 'Forensic analysis unavailable' : 'Forensic analysis completed');
 
-  if (ev['face:match']) add('face', 'Biometric comparison', CONFIDENCE.face, CONFIDENCE.face, 'Faces compared');
+  if (ev['face:not_applicable']) add('face', 'Biometric comparison', CONFIDENCE.faceNotApplicable, CONFIDENCE.face, 'Not applicable for this document type');
+  else if (ev['face:match']) add('face', 'Biometric comparison', CONFIDENCE.face, CONFIDENCE.face, 'Faces compared');
   else if (ev['face:not_compared']) add('face', 'Biometric comparison', CONFIDENCE.faceNotFound, CONFIDENCE.face, 'Module ran but a face was not detected');
   else add('face', 'Biometric comparison', 0, CONFIDENCE.face, 'Face verification unavailable');
 
@@ -83,16 +84,16 @@ export function trustProfile(evidence, inputs) {
   const val = evidence.filter((e) => e.source === 'validation' && e.status !== STATUS.UNAVAILABLE);
   const dims = {};
 
-  // Identity consistency: MRZ↔visual agreement, MRZ check digits, DOB plausibility
-  const idChecks = val.filter((e) => e.category === 'mrz' || e.category === 'dob');
+  // Identity / data consistency: MRZ↔visual agreement, MRZ check digits, DOB plausibility, cross-field date and marks rules
+  const idChecks = val.filter((e) => e.category === 'mrz' || e.category === 'dob' || e.category === 'consistency');
   if (idChecks.length) {
     let s = 100;
     for (const e of idChecks) {
-      if (e.status === STATUS.FAIL) s -= /^validation:mrz_viz_/.test(e.id) ? TRUST.identity.mrzVisualMismatch : /^validation:mrz_/.test(e.id) ? TRUST.identity.mrzChecksumFail : TRUST.identity.dobImplausible;
+      if (e.status === STATUS.FAIL) s -= /^validation:mrz_viz_/.test(e.id) ? TRUST.identity.mrzVisualMismatch : /^validation:mrz_/.test(e.id) ? TRUST.identity.mrzChecksumFail : e.severity === SEVERITY.CRITICAL ? TRUST.identity.mrzVisualMismatch : TRUST.identity.dobImplausible;
       else if (e.status === STATUS.WARN) s -= TRUST.identity.warn;
     }
     dims.identityConsistency = { score: clamp(s), available: true, basis: idChecks.map((e) => e.id) };
-  } else dims.identityConsistency = { score: null, available: false, reason: 'No MRZ or identity cross-checks available' };
+  } else dims.identityConsistency = { score: null, available: false, reason: 'No MRZ, date or cross-field consistency checks available' };
 
   // Document validity: expiry, format, required fields, visa rules, codes
   const valChecks = val.filter((e) => ['expiry', 'format', 'required', 'visa', 'code'].includes(e.category));
@@ -115,6 +116,7 @@ export function trustProfile(evidence, inputs) {
   // Biometric consistency
   const f = ev['face:match'];
   if (f) dims.biometricConsistency = { score: clamp(f.value.confidence), available: true, basis: ['face:match'] };
+  else if (ev['face:not_applicable']) dims.biometricConsistency = { score: null, available: false, notApplicable: true, reason: 'Not applicable for this document type' };
   else dims.biometricConsistency = { score: null, available: false, reason: ev['face:not_compared'] ? ev['face:not_compared'].explanation : 'Face verification unavailable' };
 
   // Extraction confidence

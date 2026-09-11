@@ -52,10 +52,15 @@ export function decide({ evidence, correlations, risk, confidence }) {
   if (corr.length) fire('correlated_signals', corr.map((c) => c.id));
   if (ev['identity:links']?.status === STATUS.WARN) fire('identity_link', ['identity:links']);
   if (ev['watchlist:result']?.status === STATUS.WARN) fire('watchlist_possible', ['watchlist:result']);
+  if (ev['issuer:result']?.status === STATUS.WARN) fire('issuer_record_not_found', ['issuer:result']);
+  if (ev['barcode:unreadable']) fire('barcode_unreadable', ['barcode:unreadable']);
   const coreMissing = CORE_UNAVAILABLE_IDS.filter((id) => ev[id]);
   if (coreMissing.length) fire('core_analysis_unavailable', coreMissing);
   if (confidence.score < CONFIDENCE.thresholds.approve) fire('confidence_below_approve', confidence.components.filter((c) => c.points < c.max).map((c) => `confidence:${c.id}`));
   if (gates.length) return { decision: DECISION.REVIEW, gates, reasons: [...reasons] };
+
+  // --- VERIFIED: only when an issuer provider actually confirmed the record and nothing contradicts it ---
+  if (ev['issuer:result']?.status === STATUS.PASS && ev['issuer:result'].value?.status === 'verified') return { decision: DECISION.VERIFIED, gates: ['issuer_verified'], reasons: ['issuer:result'] };
 
   return { decision: DECISION.APPROVE, gates: ['no_contradictory_evidence'], reasons: [] };
 }
@@ -68,6 +73,8 @@ export function rationale({ evidence, correlations, decision, confidence }) {
   const valFails = val.filter((e) => e.status === STATUS.FAIL);
   const mrzChecks = val.filter((e) => /^validation:mrz_(doc_number|dob|expiry|composite)$/.test(e.id));
 
+  const cls = ev['classification:type'];
+  if (cls) parts.push(cls.value?.overridden ? `Screened as ${labelOfType(cls)} (set by the officer).` : cls.status === STATUS.WARN ? `Document type ${labelOfType(cls)} detected with low confidence (${Math.round((cls.value?.confidence || 0) * 100)}%).` : `Classified as ${labelOfType(cls)} (${Math.round((cls.value?.confidence || 0) * 100)}%).`);
   if (ev['ocr:unavailable'] || ev['ocr:confidence']?.status === STATUS.UNAVAILABLE) parts.push('Text could not be extracted reliably from the document.');
   else if (val.length && valFails.length === 0) parts.push(mrzChecks.length ? 'Document structure and MRZ checks passed.' : 'Document format and validity checks passed.');
   else if (valFails.length) {
@@ -88,20 +95,33 @@ export function rationale({ evidence, correlations, decision, confidence }) {
   if (aggr.length) parts.push(`Correlated evidence: ${aggr.map((c) => c.label.toLowerCase()).join('; ')}.`);
   if (conflict.length) parts.push(conflict[0].label + '.');
 
+  const bc = ev['barcode:detected'];
+  const bcCheck = evidence.find((e) => /^validation:barcode_consistency/.test(e.id));
+  if (bc && bcCheck) parts.push(bcCheck.status === STATUS.PASS ? 'A QR / barcode was decoded and its content agrees with the printed fields.' : 'A QR / barcode was decoded but its content does not match the printed fields.');
+  else if (bc) parts.push('A QR / barcode was decoded; it carried nothing comparable with the printed fields.');
+  else if (ev['barcode:unreadable']) parts.push('A QR / barcode was found but could not be decoded.');
+
   const f = ev['face:match'];
   if (f) parts.push(f.value.state === 'match' ? 'Face verification passed.' : f.value.state === 'review' ? 'Face verification is borderline and needs officer review.' : 'Face verification failed: the presented person does not match the document photo.');
+  else if (ev['face:not_applicable']) parts.push('Face comparison is not applicable to this document type.');
   else if (ev['face:not_compared']) parts.push(ev['face:not_compared'].explanation);
   else parts.push('Face verification was not performed.');
 
   if (ev['watchlist:result']?.status !== undefined && ev['watchlist:result'].status !== STATUS.PASS) parts.push(ev['watchlist:result'].explanation);
   if (ev['identity:links']?.status === STATUS.WARN) parts.push(ev['identity:links'].explanation);
+  const issuer = ev['issuer:result'];
+  if (issuer) parts.push(issuer.explanation);
+  else if (ev['issuer:unavailable']) parts.push('Official issuer verification was not performed.');
 
   if (decision === DECISION.INSUFFICIENT) parts.push(`Analysis confidence is ${confidence.score}%, which is too low for a defensible automated recommendation.`);
   else if (confidence.usesMockProviders) parts.push('Note: one or more results come from demo providers, not real analysis.');
   return parts.join(' ');
 }
 
+function labelOfType(cls) { return cls.label.replace(/^Document type /, '').replace(/ \(officer\)$/, ''); }
+
 function shortLabel(e) {
+  if (/^validation:(id_format_|date_valid_|rule_|marks_|percentage_|barcode_)/.test(e.id)) return e.label.toLowerCase();
   if (/^validation:mrz_viz_/.test(e.id)) return `${FIELD_LABELS[e.field] || e.field} differs between printed data and MRZ (${e.value?.visual} vs ${e.value?.mrz})`;
   if (e.id === 'validation:expiry_not_passed') return 'document is expired';
   if (/^validation:mrz_/.test(e.id)) return `${e.rule.replace('mrz_', 'MRZ ').replace('_', ' ')} check digit fails`;
@@ -133,11 +153,11 @@ export function counterfactual({ decision, reasons, evidence, correlations, conf
     };
   }
 
-  if (decision === DECISION.APPROVE) {
+  if (decision === DECISION.APPROVE || decision === DECISION.VERIFIED) {
     return {
       current: decision,
       reasons: [],
-      resolution: 'No contradictory evidence was found. Any failing validation rule, tampering signal, biometric mismatch or watchlist hit would move this to REVIEW or REJECT.',
+      resolution: decision === DECISION.VERIFIED ? 'The document is confirmed by an issuer record and nothing contradicts it. Any failing validation rule, tampering signal, biometric mismatch or watchlist hit would move this to REVIEW REQUIRED or SUSPICIOUS.' : 'No contradictory evidence was found. Any failing validation rule, tampering signal, biometric mismatch or watchlist hit would move this to REVIEW REQUIRED or SUSPICIOUS.',
       potentialDecision: null,
       requires: [],
     };

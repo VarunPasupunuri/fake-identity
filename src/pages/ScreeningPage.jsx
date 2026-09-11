@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useSettings } from '../context/SettingsContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { useScreeningPipeline } from '../hooks/useScreeningPipeline.js';
-import { createScreening, recordDecision } from '../services/screenings.js';
+import { createScreening, recordDecision, listScreenings } from '../services/screenings.js';
 import DocumentUpload from '../components/screening/DocumentUpload.jsx';
 import LivePhotoCapture from '../components/screening/LivePhotoCapture.jsx';
 import ProcessingSteps from '../components/screening/ProcessingSteps.jsx';
@@ -13,13 +13,15 @@ import ResultsView from '../components/screening/ResultsView.jsx';
 import DecisionBar from '../components/screening/DecisionBar.jsx';
 import { PageHeader } from '../components/ui/index.jsx';
 import { resolveProviders } from '../modules/registry.js';
+import { resolveSelection, getProfile, AUTO_DETECT } from '../modules/documents/registry.js';
+import { DEMO_DOCUMENTS, SCENARIO_OPTIONS } from '../modules/documents/fixtures.js';
 import { cx } from '../lib/format.js';
 
 const STEPS = [
   { label: 'Document', icon: FileImage },
   { label: 'Live photo', icon: ScanFace },
   { label: 'Verification', icon: ListChecks },
-  { label: 'Result', icon: Gauge },
+  { label: 'Assessment', icon: Gauge },
 ];
 
 export default function ScreeningPage() {
@@ -29,26 +31,39 @@ export default function ScreeningPage() {
   const navigate = useNavigate();
   const pipeline = useScreeningPipeline();
   const [step, setStep] = useState(0);
-  const [documentType, setDocumentType] = useState('passport');
+  const [documentType, setDocumentType] = useState(AUTO_DETECT);
   const [docImage, setDocImage] = useState(null);
   const [liveImage, setLiveImage] = useState(null);
   const [useMock, setUseMock] = useState(false);
   const [scenario, setScenario] = useState('clean');
+  const [mockDocument, setMockDocument] = useState('passport');
+  const [history, setHistory] = useState([]);
   const [screeningId, setScreeningId] = useState(null);
   const [saveError, setSaveError] = useState('');
   const [decided, setDecided] = useState(null);
   const startedRef = useRef(false);
-  const providers = useMock ? { ocr: 'mock', tamper: 'mock', face: 'mock' } : resolveProviders({ providers: settings.providers });
+  const providers = resolveProviders(useMock ? { useMock: true, providers: settings.providers } : { providers: settings.providers });
+  // A manually selected type whose profile has no holder photograph skips the live-photo step entirely.
+  const selection = resolveSelection(documentType);
+  const selectedProfile = selection.type ? getProfile(selection.type) : null;
+  const faceApplies = !selectedProfile || selectedProfile.face !== 'not_applicable';
+
+  // Prior screenings power identity correlation; a failure here never blocks a screening.
+  useEffect(() => {
+    let live = true;
+    listScreenings({ user, mine: true, max: 100 }).then((rows) => live && setHistory(rows || [])).catch(() => live && setHistory([]));
+    return () => { live = false; };
+  }, [user]);
 
   const start = async () => {
     if (startedRef.current) return;
     startedRef.current = true;
     setStep(2);
     setSaveError('');
-    const out = await pipeline.run({ documentType, documentImage: docImage.dataUrl, documentFile: docImage.file, liveImage: liveImage?.dataUrl, options: { useMock, scenario, providers: settings.providers } });
+    const out = await pipeline.run({ documentType, documentImage: docImage.dataUrl, documentFile: docImage.file, liveImage: liveImage?.dataUrl, options: { useMock, scenario, mockDocument, providers: settings.providers, history } });
     if (!out) { startedRef.current = false; return; }
     try {
-      const id = await createScreening({ user: { ...user, checkpoint: settings.checkpoint }, documentType, images: { document: docImage.dataUrl, live: liveImage?.dataUrl }, ...out, onWarning: (msg) => toast.warn('Image storage fallback', msg) });
+      const id = await createScreening({ user: { ...user, checkpoint: settings.checkpoint }, requestedType: documentType, images: { document: docImage.dataUrl, live: liveImage?.dataUrl }, ...out, onWarning: (msg) => toast.warn('Image storage fallback', msg) });
       setScreeningId(id);
     } catch (e) {
       console.error(e);
@@ -68,6 +83,7 @@ export default function ScreeningPage() {
   };
 
   const restart = () => { pipeline.reset(); startedRef.current = false; setStep(0); setDocImage(null); setLiveImage(null); setScreeningId(null); setDecided(null); setSaveError(''); };
+  const afterDocument = () => (faceApplies ? setStep(1) : start());
 
   // Auto-run after live capture when enabled in settings
   useEffect(() => { if (settings.autoRunAfterCapture && step === 1 && liveImage && docImage) start(); }, [liveImage]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -79,7 +95,8 @@ export default function ScreeningPage() {
         actions={step < 2 && (
           <div className="flex flex-wrap items-center gap-2 t-body-sm">
             <label className="flex min-h-9 cursor-pointer items-center gap-2 rounded-md hairline px-3"><input type="checkbox" checked={useMock} onChange={(e) => setUseMock(e.target.checked)} className="h-4 w-4 accent-[var(--brand)]" /><FlaskConical className="h-4 w-4 faint" aria-hidden="true" />Demonstration data</label>
-            {useMock && <select className="input input-sm w-auto" aria-label="Demonstration scenario" value={scenario} onChange={(e) => setScenario(e.target.value)}><option value="clean">Scenario: genuine document</option><option value="suspicious">Scenario: altered document</option></select>}
+            {useMock && <select className="input input-sm w-auto" aria-label="Demonstration document" value={mockDocument} onChange={(e) => setMockDocument(e.target.value)}>{DEMO_DOCUMENTS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}</select>}
+            {useMock && <select className="input input-sm w-auto" aria-label="Demonstration scenario" value={scenario} onChange={(e) => setScenario(e.target.value)}>{SCENARIO_OPTIONS.map((o) => <option key={o.value} value={o.value}>Scenario: {o.label}</option>)}</select>}
             {!useMock && <Link to="/settings" className="btn-ghost btn-sm">Providers <span className="t-code">{providers.ocr} · {providers.tamper} · {providers.face}</span><ExternalLink className="h-3 w-3" aria-hidden="true" /></Link>}
           </div>
         )} />
@@ -87,13 +104,13 @@ export default function ScreeningPage() {
       <Stepper step={step} />
 
       <div className="mt-6" key={step}>
-        {step === 0 && <div className="animate-fade-in"><DocumentUpload documentType={documentType} onDocumentType={setDocumentType} image={docImage} onImage={setDocImage} onNext={() => setStep(1)} showGuide={settings.captureGuide} /></div>}
+        {step === 0 && <div className="animate-fade-in"><DocumentUpload documentType={documentType} onDocumentType={setDocumentType} image={docImage} onImage={setDocImage} onNext={afterDocument} showGuide={settings.captureGuide} nextLabel={faceApplies ? 'Continue to live photo' : 'Run screening'} /></div>}
         {step === 1 && <div className="animate-fade-in"><LivePhotoCapture image={liveImage} onImage={setLiveImage} onBack={() => setStep(0)} onNext={start} showGuide={settings.captureGuide} /></div>}
         {step === 2 && <div className="animate-fade-in"><ProcessingSteps steps={pipeline.steps} providers={providers} documentImage={docImage?.dataUrl} /></div>}
         {step === 3 && pipeline.results && (
           <div className="animate-fade-in space-y-5">
             {saveError && <div className="alert alert-danger">{saveError}</div>}
-            <ResultsView results={pipeline.results} images={{ document: docImage?.dataUrl, live: liveImage?.dataUrl }}>
+            <ResultsView results={pipeline.results} images={{ document: docImage?.dataUrl, live: liveImage?.dataUrl }} linkBase="/history">
               {decided ? (
                 <div className="flex items-center gap-2 rounded-md hairline px-3 py-3 text-sm font-medium status-ok"><Check className="h-4 w-4" aria-hidden="true" />Decision recorded — opening case…</div>
               ) : (

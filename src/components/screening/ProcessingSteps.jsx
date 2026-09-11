@@ -46,7 +46,7 @@ export default function ProcessingSteps({ steps, providers, documentImage }) {
         <div>
           <p className="t-label mb-1">Providers</p>
           <dl className="t-body-sm">
-            {[['Extraction', providers?.ocr], ['Integrity', providers?.tamper], ['Face', providers?.face], ['Watchlist', providers?.watchlist]].map(([k, v]) => <div key={k} className="flex justify-between py-0.5"><dt className="muted">{k}</dt><dd className="t-code">{v || '—'}</dd></div>)}
+            {[['Extraction', providers?.ocr], ['Integrity', providers?.tamper], ['QR / barcode', providers?.barcode], ['Face', providers?.face], ['Watchlist', providers?.watchlist], ['Issuer', providers?.issuer]].map(([k, v]) => <div key={k} className="flex justify-between py-0.5"><dt className="muted">{k}</dt><dd className="t-code">{v || '—'}</dd></div>)}
           </dl>
         </div>
         <div>

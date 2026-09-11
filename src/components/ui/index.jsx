@@ -87,9 +87,10 @@ export function DecisionBadge({ decision }) {
 }
 
 const AI_DECISION = {
-  approve: { label: 'Approve', cls: 'badge-ok' },
-  review: { label: 'Review', cls: 'badge-warn' },
-  reject: { label: 'Reject', cls: 'badge-danger' },
+  verified: { label: 'Verified', cls: 'badge-ok' },
+  approve: { label: 'Likely authentic', cls: 'badge-ok' },
+  review: { label: 'Review required', cls: 'badge-warn' },
+  reject: { label: 'Suspicious', cls: 'badge-danger' },
   insufficient_evidence: { label: 'Insufficient evidence', cls: 'badge-dashed' },
 };
 

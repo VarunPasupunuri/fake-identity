@@ -2,7 +2,7 @@
   "name": "identity-sentinel",
   "private": true,
   "version": "0.1.0",
-  "description": "Identity Sentinel \u2014 Intelligent Identity & Document Verification Platform (SIH 2026, PS 26188)",
+  "description": "Identity Sentinel — Intelligent Identity & Document Verification Platform (SIH 2026, PS 26188)",
   "type": "module",
   "scripts": {
     "postinstall": "node scripts/copy-assets.mjs",
@@ -24,6 +24,7 @@
     "@vladmandic/face-api": "^1.7.15",
     "exifr": "^7.1.3",
     "firebase": "^12.19.0",
+    "jsqr": "^1.4.0",
     "lucide-react": "^1.44.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

@@ -6,7 +6,7 @@
  * shapes, so a provider (mock, in-browser, Cloud Function, trained ML model)
  * can be swapped in `src/modules/registry.js` without touching any component.
  *
- * @typedef {'passport'|'visa'|'national_id'|'driving_license'|'permit'} DocumentType
+ * @typedef {string} DocumentType   a profile id from modules/documents/profiles.js (passport, visa, birth_certificate, …)
  *
  * @typedef {Object} ExtractedFields
  * @property {string} [surname]
@@ -100,13 +100,10 @@
  * @property {string} summary
  */
 
-export const DOCUMENT_TYPES = [
-  { value: 'passport', label: 'Passport', hasMrz: true },
-  { value: 'visa', label: 'Visa', hasMrz: true },
-  { value: 'national_id', label: 'National ID', hasMrz: true },
-  { value: 'driving_license', label: 'Driving Licence', hasMrz: false },
-  { value: 'permit', label: 'Permit / Pass', hasMrz: false },
-];
+import { listProfiles, DOCUMENT_CATEGORIES } from './documents/registry.js';
+
+/** Every registered document type (travel, identity, civil, academic, employment, certificate, generic). */
+export const DOCUMENT_TYPES = listProfiles().map((p) => ({ value: p.id, label: p.label, hasMrz: p.mrz, category: p.category, categoryLabel: DOCUMENT_CATEGORIES[p.category]?.label || p.category }));
 
 export const DOCUMENT_TYPE_LABEL = Object.fromEntries(DOCUMENT_TYPES.map((d) => [d.value, d.label]));
 

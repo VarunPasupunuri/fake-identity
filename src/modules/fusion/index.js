@@ -34,6 +34,7 @@ import { scoreRisk, computeConfidence, trustProfile, buildChain } from './scorin
 import { decide, rationale, counterfactual } from './decision.js';
 import { DECISION, DECISION_LABEL, STATUS } from './constants.js';
 import { toLegacyDecision } from './compat.js';
+import { getProfile } from '../documents/registry.js';
 
 export { DECISION, DECISION_LABEL } from './constants.js';
 export { fromLegacyDecision, toLegacyDecision, normaliseDecision, decisionLabel, toLegacyRisk } from './compat.js';
@@ -58,6 +59,9 @@ function run(inputs, evidence) {
  */
 export function fuseEvidence(inputs) {
   const safe = { documentType: 'passport', ocr: null, validation: null, tampering: null, face: null, ...(inputs || {}) };
+  // Document-profile requirements (face applicability, MRZ, barcode) drive evidence normalisation and confidence.
+  const profile = getProfile(safe.documentType);
+  safe.requirements = { face: profile.face, mrz: profile.mrz, barcode: profile.barcode, ...(inputs?.requirements || {}) };
   const evidence = normaliseEvidence(safe);
   const base = run(safe, evidence);
   const trust = trustProfile(evidence, safe);
@@ -74,6 +78,8 @@ export function fuseEvidence(inputs) {
   return {
     version: 1,
     documentType: safe.documentType,
+    documentCategory: profile.category,
+    requirements: safe.requirements,
     evidence,
     correlations: base.correlations,
     risk: base.risk,

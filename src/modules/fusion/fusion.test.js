@@ -282,7 +282,7 @@ describe('15. counterfactual generation', () => {
     expect(r.decision).toBe(DECISION.REVIEW);
     expect(r.counterfactual.current).toBe(DECISION.REVIEW);
     expect(r.counterfactual.potentialDecision).toBe(DECISION.APPROVE);
-    expect(r.counterfactual.resolution).toMatch(/could move to APPROVE/);
+    expect(r.counterfactual.resolution).toMatch(/could move to LIKELY AUTHENTIC/);
     expect(r.counterfactual.reasons.map((x) => x.id)).toEqual(expect.arrayContaining(['tampering:ela_0']));
   });
   it('REJECT with two findings: clearing one is pivotal to REVIEW, clearing all reaches APPROVE', () => {
@@ -295,7 +295,7 @@ describe('15. counterfactual generation', () => {
   it('APPROVE explains what would change it, with no potential decision', () => {
     const r = fuse({});
     expect(r.counterfactual.potentialDecision).toBeNull();
-    expect(r.counterfactual.resolution).toMatch(/REVIEW or REJECT/);
+    expect(r.counterfactual.resolution).toMatch(/REVIEW REQUIRED or SUSPICIOUS/);
   });
 });
 

@@ -107,8 +107,9 @@ describe('screening pipeline → evidence fusion integration', () => {
     const rec = recorder();
     await runScreening({ documentType: 'visa', documentImage: IMG, liveImage: IMG, options: { ...MOCK } }, { onUpdate: rec.onUpdate, log: () => {} });
     const riskMsgs = rec.events.filter((e) => e.id === 'risk').map((e) => e.message);
-    expect(riskMsgs).toEqual(expect.arrayContaining(['Starting', 'Normalising evidence', 'Correlating signals', 'Scoring risk and confidence', 'Complete']));
-    for (const id of STEP_IDS) expect(rec.events.some((e) => e.id === id && e.status === 'running')).toBe(true);
+    expect(riskMsgs).toEqual(expect.arrayContaining(['Starting', 'Normalising evidence', 'Correlating verification evidence', 'Calculating risk assessment', 'Complete']));
+    // Face is skipped for a document without a live photo; every other stage reports progress.
+    for (const id of STEP_IDS.filter((x) => x !== 'face')) expect(rec.events.some((e) => e.id === id && e.status === 'running')).toBe(true);
   });
 
   it('runs the watchlist step in parallel and feeds its result to fusion; record carries it', async () => {
@@ -147,7 +148,102 @@ describe('screening pipeline → evidence fusion integration', () => {
   it('never fabricates evidence: only sources that ran appear', async () => {
     const out = await runScreening({ documentType: 'driving_license', documentImage: IMG, liveImage: null, options: { ...MOCK } }, { log: () => {} });
     const sources = new Set(out.fusion.evidence.map((e) => e.source));
-    expect([...sources].sort()).toEqual(['face', 'ocr', 'tampering', 'validation', 'watchlist']);
-    expect(out.fusion.evidence.some((e) => e.source === 'identity' || e.source === 'classification')).toBe(false);
+    expect([...sources].sort()).toEqual(['barcode', 'classification', 'face', 'identity', 'issuer', 'ocr', 'tampering', 'validation', 'watchlist']);
+    // Modules that could not produce a result say so instead of passing or failing.
+    expect(out.fusion.evidence.find((e) => e.source === 'face')).toMatchObject({ status: 'unavailable', riskContribution: 0 });
+    expect(out.fusion.evidence.find((e) => e.source === 'issuer')).toMatchObject({ id: 'issuer:unavailable', status: 'unavailable', riskContribution: 0 });
+    expect(out.fusion.evidence.find((e) => e.source === 'identity')).toMatchObject({ status: 'pass', riskContribution: 0 });
+  });
+
+  it('a module whose provider is missing contributes no evidence at all', async () => {
+    const noBarcode = { ...modules, barcode: async () => null };
+    const out = await runScreening({ documentType: 'passport', documentImage: IMG, liveImage: IMG, options: { ...MOCK } }, { modules: noBarcode, log: () => {} });
+    expect(out.fusion.evidence.some((e) => e.source === 'barcode')).toBe(false);
+  });
+});
+
+describe('universal document screening (workflows A–E)', () => {
+  const run = (documentType, opts = {}) => runScreening({ documentType, documentImage: IMG, liveImage: opts.live === false ? null : IMG, options: { useMock: true, scenario: opts.scenario || 'clean', mockDocument: opts.mockDocument, history: opts.history || [] } }, { log: () => {}, onUpdate: opts.onUpdate });
+
+  it('A — passport: classification, MRZ, validation, integrity, face, fusion', async () => {
+    const out = await run('auto', { mockDocument: 'passport' });
+    expect(out.documentType).toBe('passport');
+    expect(out.classification).toMatchObject({ type: 'passport', basis: 'mrz' });
+    expect(out.ocr.mrz).toBeTruthy();
+    expect(out.validation.checks.some((c) => c.id === 'mrz_doc_number')).toBe(true);
+    expect(out.face).not.toBeNull();
+    expect(out.fusion.decision).toBe(DECISION.APPROVE);
+  });
+
+  it('B — birth certificate: classified, validated by its own rules, face not applicable', async () => {
+    const rec = recorder();
+    const out = await run('auto', { mockDocument: 'birth_certificate', live: false, onUpdate: rec.onUpdate });
+    expect(out.documentType).toBe('birth_certificate');
+    expect(out.documentCategory).toBe('civil');
+    expect(out.ocr.fields.childName).toBe('AARAV DEMO KUMAR');
+    expect(out.validation.checks.some((c) => c.id === 'rule_dateOfBirth_before_registrationDate')).toBe(true);
+    expect(rec.steps.face.status).toBe('skipped');
+    expect(rec.steps.face.message).toMatch(/not applicable/i);
+    expect(out.fusion.evidence.find((e) => e.source === 'face').id).toBe('face:not_applicable');
+    expect(out.fusion.decision).toBe(DECISION.APPROVE);
+    expect(out.barcode.status).toBe('detected');
+  });
+
+  it('C — death certificate with contradictory dates is not approved', async () => {
+    const out = await run('auto', { mockDocument: 'death_certificate', scenario: 'inconsistent_dates', live: false });
+    expect(out.documentType).toBe('death_certificate');
+    expect(out.fusion.decision).not.toBe(DECISION.APPROVE);
+    expect(out.validation.checks.find((c) => c.id === 'rule_dateOfBirth_before_dateOfDeath').status).toBe('fail');
+  });
+
+  it('D — altered marks memo: academic rules catch the arithmetic', async () => {
+    const out = await run('auto', { mockDocument: 'marks_memo', scenario: 'suspicious', live: false });
+    expect(out.documentType).toBe('marks_memo');
+    expect(out.ocr.fields.rollNumber).toBe('21DEMO0512');
+    expect(out.validation.checks.find((c) => c.id === 'marks_total_consistent').status).toBe('fail');
+    expect(out.fusion.decision).not.toBe(DECISION.APPROVE);
+  });
+
+  it('E — unknown document: generic screening, never rejected for being unknown', async () => {
+    const out = await run('auto', { mockDocument: 'generic_document', scenario: 'unknown', live: false });
+    expect(out.documentType).toBe('generic_document');
+    expect(out.classification.basis).toBe('fallback');
+    expect(out.fusion.decision).not.toBe(DECISION.REJECT);
+    expect(out.validation.failed).toBe(0);
+  });
+
+  it('an officer-selected type overrides detection and applies that profile\'s rules', async () => {
+    const out = await run('official_certificate', { mockDocument: 'birth_certificate', live: false });
+    expect(out.documentType).toBe('official_certificate');
+    expect(out.classification.overridden).toBe(true);
+  });
+
+  it('a category selection keeps detection inside that category', async () => {
+    const out = await run('category:academic', { mockDocument: 'degree_certificate', live: false });
+    expect(out.documentCategory).toBe('academic');
+  });
+
+  it('feeds prior screenings into identity correlation', async () => {
+    const history = [{ id: 'PRIOR1', subjectName: 'ANITA SHARMA', documentNumber: 'M8412345', documentType: 'passport', createdAt: '2026-01-01T00:00:00Z', decision: 'accept', ocr: { fields: { dateOfBirth: '1988-04-12' } } }];
+    const out = await run('auto', { mockDocument: 'passport', history });
+    expect(out.identity.links.map((l) => l.screeningId)).toContain('PRIOR1');
+    expect(out.fusion.evidence.find((e) => e.source === 'identity').status).toBe('warn');
+  });
+
+  it('issuer verification stays unavailable unless a provider confirms the record', async () => {
+    const out = await run('auto', { mockDocument: 'birth_certificate', live: false });
+    expect(out.issuer.status).toBe('unavailable');
+    expect(out.fusion.decision).not.toBe('verified');
+    const verified = await runScreening({ documentType: 'auto', documentImage: IMG, liveImage: null, options: { useMock: true, mockDocument: 'birth_certificate', providers: { issuer: 'synthetic' } } }, { log: () => {} });
+    expect(verified.issuer).toMatchObject({ status: 'verified', synthetic: true });
+    expect(verified.fusion.decision).toBe('verified');
+  });
+
+  it('only the modules relevant to the profile run (no MRZ or face work for a certificate)', async () => {
+    const rec = recorder();
+    await run('auto', { mockDocument: 'marks_memo', live: false, onUpdate: rec.onUpdate });
+    expect(rec.steps.face.status).toBe('skipped');
+    expect(rec.steps.barcode.status).toBe('done');
+    expect(rec.steps.classification.status).toBe('done');
   });
 });

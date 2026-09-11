@@ -36,6 +36,11 @@ const VALIDATION_CATEGORY = [
   [/_code$/, 'code'],
   [/^gender/, 'format'],
   [/^ocr_confidence/, 'ocr_quality'],
+  // Profile rule engine (certificates, academic, employment, generic)
+  [/^id_format_/, 'format'],
+  [/^date_valid_|^rule_|^marks_|^percentage_/, 'consistency'],
+  [/^issuer_present/, 'issuer'],
+  [/^barcode_/, 'barcode'],
 ];
 
 export function validationCategory(checkId) {
@@ -127,7 +132,8 @@ export function evidenceFromTampering(tampering) {
 }
 
 /** Face verification → a single biometric item with an explicit verification state. */
-export function evidenceFromFace(face) {
+export function evidenceFromFace(face, applicability = 'required') {
+  if (!face && applicability === 'not_applicable') return [{ id: 'face:not_applicable', source: SOURCE.FACE, category: 'biometric', status: STATUS.INFO, severity: SEVERITY.NONE, label: 'Face comparison not applicable', value: { state: 'not_applicable' }, explanation: 'Face comparison is not applicable to this document type (no holder photograph to compare).', riskContribution: 0, confidence: null }];
   if (!face) return [{ id: 'face:unavailable', source: SOURCE.FACE, category: 'biometric', status: STATUS.UNAVAILABLE, severity: SEVERITY.NONE, label: 'Face verification unavailable', value: { state: 'insufficient' }, explanation: 'Face verification unavailable — no live photo was compared.', riskContribution: 0, confidence: null }];
   const compared = Boolean(face.documentFaceFound && face.liveFaceFound);
   if (!compared) {
@@ -174,12 +180,43 @@ export function evidenceFromOcr(ocr) {
   return items;
 }
 
-/** Optional future modules — consumed if present, never fabricated. */
+/** QR / barcode module → readability item. Consistency with printed fields is judged by validation (barcode_* checks). */
+export function evidenceFromBarcode(barcode) {
+  if (!barcode) return [];
+  if (barcode.status === 'unavailable') return [{ id: 'barcode:unavailable', source: SOURCE.BARCODE, category: 'barcode', status: STATUS.UNAVAILABLE, severity: SEVERITY.NONE, label: 'QR / barcode analysis unavailable', value: null, explanation: barcode.explanation || 'QR / barcode analysis did not run.', riskContribution: 0, confidence: null, rule: barcode.provider }];
+  if (barcode.status === 'not_found') return [{ id: 'barcode:none', source: SOURCE.BARCODE, category: 'barcode', status: STATUS.INFO, severity: SEVERITY.NONE, label: 'No QR / barcode detected', value: { status: 'not_found' }, explanation: barcode.explanation || 'No QR code or barcode was detected on the document image.', riskContribution: 0, confidence: null, rule: barcode.provider }];
+  if (barcode.status === 'unreadable') return [{ id: 'barcode:unreadable', source: SOURCE.BARCODE, category: 'barcode', status: STATUS.WARN, severity: SEVERITY.LOW, label: 'QR / barcode unreadable', value: { status: 'unreadable' }, explanation: barcode.explanation || 'A code was found but could not be decoded.', riskContribution: RISK.barcode.none, confidence: null, rule: barcode.provider }];
+  const codes = barcode.codes || [];
+  return [{ id: 'barcode:detected', source: SOURCE.BARCODE, category: 'barcode', status: STATUS.INFO, severity: SEVERITY.NONE, label: `${codes.length} QR / barcode${codes.length === 1 ? '' : 's'} decoded`, value: { status: 'detected', codes: codes.map((c) => ({ format: c.format, rawValue: c.rawValue })) }, explanation: `${codes.length} code(s) decoded (${codes.map((c) => c.format).join(', ')}). Decoded content is compared with the printed fields; a code is evidence of what it encodes, not of authenticity.`, riskContribution: 0, confidence: null, region: codes[0]?.region, rule: barcode.provider }];
+}
+
+/** Issuer verification → explicit unavailable / not found / mismatch / verified item. */
+export function evidenceFromIssuer(issuer) {
+  if (!issuer) return [];
+  const src = issuer.source || 'issuer source unspecified';
+  if (!issuer.status || issuer.status === 'unavailable') return [{ id: 'issuer:unavailable', source: SOURCE.ISSUER, category: 'issuer', status: STATUS.UNAVAILABLE, severity: SEVERITY.NONE, label: 'Issuer verification unavailable', value: { source: src, provider: issuer.provider || null }, explanation: issuer.explanation || 'Official issuer verification was not performed.', riskContribution: 0, confidence: null, rule: issuer.provider }];
+  const st = issuer.status;
+  return [{
+    id: 'issuer:result', source: SOURCE.ISSUER, category: 'issuer',
+    status: st === 'verified' ? STATUS.PASS : st === 'mismatch' ? STATUS.FAIL : STATUS.WARN,
+    severity: st === 'verified' ? SEVERITY.NONE : st === 'mismatch' ? SEVERITY.CRITICAL : SEVERITY.MEDIUM,
+    label: st === 'verified' ? `Verified against issuer record${issuer.synthetic ? ' (synthetic demo register)' : ''}` : st === 'mismatch' ? 'Issuer record contradicts the document' : 'No issuer record found',
+    value: { status: st, source: src, synthetic: Boolean(issuer.synthetic), matchedFields: issuer.matchedFields || [], conflicts: issuer.conflicts || [] },
+    explanation: issuer.explanation || (st === 'verified' ? `Issuer record confirmed (${src}).` : st === 'mismatch' ? `The issuer record disagrees with the presented document (${src}).` : `No matching record at the issuer (${src}).`),
+    riskContribution: st === 'mismatch' ? RISK.issuer.mismatch : st === 'not_found' ? RISK.issuer.notFound : 0,
+    confidence: null, rule: issuer.provider || src,
+  }];
+}
+
+/** Optional modules — consumed if present, never fabricated. */
 export function evidenceFromOptional({ classification, watchlist, identity }) {
   const items = [];
   if (classification) {
     const conf = Math.max(0, Math.min(1, Number(classification.confidence) || 0));
-    items.push({ id: 'classification:type', source: SOURCE.CLASSIFICATION, category: 'classification', status: conf >= 0.6 ? STATUS.INFO : STATUS.WARN, severity: conf >= 0.6 ? SEVERITY.NONE : SEVERITY.LOW, label: `Document type ${classification.type}`, value: { type: classification.type, confidence: conf, overridden: Boolean(classification.overridden) }, explanation: conf >= 0.6 ? `Document classified as ${classification.type} (${Math.round(conf * 100)}%).` : `Document type ${classification.type} detected with low confidence (${Math.round(conf * 100)}%).`, riskContribution: conf >= 0.6 ? 0 : RISK.classification.lowConfidence, confidence: conf, rule: classification.provider });
+    const name = classification.label || classification.type;
+    const overridden = Boolean(classification.overridden);
+    const low = !overridden && conf < 0.6;
+    items.push({ id: 'classification:type', source: SOURCE.CLASSIFICATION, category: 'classification', status: low ? STATUS.WARN : STATUS.INFO, severity: low ? SEVERITY.LOW : SEVERITY.NONE, label: overridden ? `Document type ${name} (officer)` : `Document type ${name}`, value: { type: classification.type, category: classification.category || null, confidence: conf, overridden, basis: classification.basis || null }, explanation: overridden ? `Document type set to ${name} by the officer.` : classification.explanation || (low ? `Document type ${name} detected with low confidence (${Math.round(conf * 100)}%).` : `Document classified as ${name} (${Math.round(conf * 100)}%).`), riskContribution: low ? RISK.classification.lowConfidence : 0, confidence: conf, rule: classification.provider });
   }
   if (watchlist) {
     // Accept both the fusion contract (clear|match|possible|unavailable) and the watchlist module's
@@ -208,8 +245,9 @@ export function evidenceFromOptional({ classification, watchlist, identity }) {
   }
   if (identity) {
     const links = identity.links || [];
-    if (identity.status === 'unavailable') items.push({ id: 'identity:unavailable', source: SOURCE.IDENTITY, category: 'identity', status: STATUS.UNAVAILABLE, severity: SEVERITY.NONE, label: 'Identity correlation unavailable', value: null, explanation: 'Identity correlation unavailable.', riskContribution: 0, confidence: null });
-    else items.push({ id: 'identity:links', source: SOURCE.IDENTITY, category: 'identity', status: links.length ? STATUS.WARN : STATUS.PASS, severity: links.length ? SEVERITY.MEDIUM : SEVERITY.NONE, label: links.length ? `Potential identity link (${links.length})` : 'No identity links', value: { links }, explanation: links.length ? `Potential identity link with ${links.length} prior screening record(s) — requires officer review.` : 'No potential identity links found in prior screenings.', riskContribution: links.length ? RISK.identity.link : 0, confidence: null });
+    const conflicting = links.filter((l) => l.kind === 'conflicting_identity');
+    if (identity.status === 'unavailable') items.push({ id: 'identity:unavailable', source: SOURCE.IDENTITY, category: 'identity', status: STATUS.UNAVAILABLE, severity: SEVERITY.NONE, label: 'Identity correlation unavailable', value: null, explanation: identity.explanation || 'Identity correlation unavailable.', riskContribution: 0, confidence: null });
+    else items.push({ id: 'identity:links', source: SOURCE.IDENTITY, category: 'identity', status: links.length ? STATUS.WARN : STATUS.PASS, severity: conflicting.length ? SEVERITY.HIGH : links.length ? SEVERITY.MEDIUM : SEVERITY.NONE, label: conflicting.length ? `Conflicting identity record (${conflicting.length})` : links.length ? `Potential identity correlation (${links.length})` : 'No identity correlations', value: { links, recordsCompared: identity.recordsCompared ?? null }, explanation: identity.explanation || (links.length ? `Potential identity correlation with ${links.length} prior screening record(s) — requires officer review.` : 'No potential identity correlations found in prior screenings.'), riskContribution: conflicting.length ? RISK.identity.conflicting : links.length ? RISK.identity.link : 0, confidence: null });
   }
   return items;
 }
@@ -220,8 +258,10 @@ export function normaliseEvidence(inputs) {
     ...evidenceFromOcr(inputs.ocr),
     ...evidenceFromValidation(inputs.validation, inputs.ocr),
     ...evidenceFromTampering(inputs.tampering),
-    ...evidenceFromFace(inputs.face),
+    ...evidenceFromBarcode(inputs.barcode),
+    ...evidenceFromFace(inputs.face, inputs.requirements?.face || 'required'),
     ...evidenceFromOptional(inputs),
+    ...evidenceFromIssuer(inputs.issuer),
   ];
 }
 

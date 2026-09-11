@@ -34,20 +34,20 @@ describe('ResultsView — four-way system assessment', () => {
     const r = results();
     expect(r.fusion.decision).toBe(DECISION.APPROVE);
     render(<ResultsView results={r} images={IMG} />);
-    expect(screen.getByRole('heading', { name: 'APPROVE' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'LIKELY AUTHENTIC' })).toBeTruthy();
     expect(screen.getByText('Risk score')).toBeTruthy();
     expect(screen.getByText('Analysis confidence')).toBeTruthy();
     expect(screen.getByText(/How suspicious the evidence is/)).toBeTruthy();
     expect(screen.getByText(/not whether the document is genuine/)).toBeTruthy();
     expect(screen.getByLabelText(`confidence ${r.fusion.confidence.score} out of 100`)).toBeTruthy();
     expect(screen.getByLabelText(`risk ${r.fusion.risk.score} out of 100`)).toBeTruthy();
-    expect(screen.getAllByText('System assessment').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Document assessment').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Verification status')).toBeTruthy();
     // only residual, low-severity contributions (face 91% → +3, forensics 4% → +2); nothing fails
     const why = screen.getByRole('heading', { name: 'Why this decision?' }).closest('section');
     expect(within(why).queryByText('critical')).toBeNull();
     expect(within(why).queryByText('high')).toBeNull();
-    const list = screen.getByRole('table', { name: 'Verification signals' });
+    const list = screen.getByRole('table', { name: 'Trust profile' });
     expect(within(list).queryByText('FAIL')).toBeNull();
     expect(within(list).getAllByText('PASS').length).toBe(5);
     expect(screen.queryByRole('heading', { name: 'Conflicting evidence' })).toBeNull();
@@ -57,7 +57,7 @@ describe('ResultsView — four-way system assessment', () => {
     const r = results({ ocr: mkOcr({}, { viz: { dateOfBirth: '1998-03-12' } }), tampering: tamper(45, [{ id: 'ela_0', type: 'text_manipulation', severity: 'medium', label: 'Inconsistent compression in text area', detail: 'ELA 3.4σ', region: { x: 0.5, y: 0.5, w: 0.2, h: 0.1 }, field: 'dateOfBirth' }]) });
     expect(r.fusion.decision).toBe(DECISION.REVIEW);
     render(<ResultsView results={r} images={IMG} />);
-    expect(screen.getByRole('heading', { name: 'REVIEW' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'REVIEW REQUIRED' })).toBeTruthy();
     const why = screen.getByRole('heading', { name: 'Why this decision?' }).closest('section');
     expect(within(why).getByText('Date of birth differs from MRZ')).toBeTruthy();
     expect(within(why).getByText('+25')).toBeTruthy();
@@ -70,8 +70,8 @@ describe('ResultsView — four-way system assessment', () => {
     const r = results({ ocr: mkOcr({ expiryDate: '2024-01-31' }), face: face(35) });
     expect(r.fusion.decision).toBe(DECISION.REJECT);
     render(<ResultsView results={r} images={IMG} />);
-    expect(screen.getByRole('heading', { name: 'REJECT' })).toBeTruthy();
-    expect(screen.getByText(/Strong evidence of invalidity, forgery or identity mismatch/)).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'SUSPICIOUS' })).toBeTruthy();
+    expect(screen.getByText(/Strong evidence of invalidity, alteration or identity mismatch/)).toBeTruthy();
     expect(screen.queryByText(/Evidence that could not be obtained/)).toBeNull();
   });
 
@@ -83,7 +83,7 @@ describe('ResultsView — four-way system assessment', () => {
     expect(screen.getByText(/cannot safely determine authenticity/)).toBeTruthy();
     expect(screen.getByText('Evidence that could not be obtained')).toBeTruthy();
     expect(screen.getByText(/Unavailable evidence is never treated as proof of fraud/)).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'REJECT' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'SUSPICIOUS' })).toBeNull();
     expect(screen.getAllByText('UNAVAILABLE').length).toBeGreaterThanOrEqual(4);
   });
 
@@ -93,9 +93,9 @@ describe('ResultsView — four-way system assessment', () => {
     const rows = fusionRows(r.fusion);
     expect(rows.find((x) => x.key === 'documentIntegrity')).toMatchObject({ status: 'unavailable', trust: null });
     expect(rows.find((x) => x.key === 'biometricConsistency')).toMatchObject({ status: 'unavailable', trust: null });
-    const list = screen.getByRole('table', { name: 'Verification signals' });
+    const list = screen.getByRole('table', { name: 'Trust profile' });
     expect(within(list).getAllByText('Unavailable').length).toBe(2);
-    expect(within(list).getAllByText('UNAVAILABLE').length).toBe(3); // integrity, biometric, watchlist (not run)
+    expect(within(list).getAllByText('UNAVAILABLE').length).toBe(6); // integrity, biometric, barcode, watchlist, identity, issuer (none ran)
     expect(within(list).getAllByText('PASS').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText(/UNAVAILABLE means the check did not run/)).toBeTruthy();
   });
@@ -117,15 +117,15 @@ describe('ResultsView — four-way system assessment', () => {
     expect(screen.getByText('Per-contribution trace')).toBeTruthy();
     expect(screen.getAllByText(/Detector:/).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: /^Show$/ }));
-    expect(screen.getByText(/could move to APPROVE/)).toBeTruthy();
-    expect(screen.getByText(/Verifying "Inconsistent compression in text area" would move the decision to APPROVE/)).toBeTruthy();
+    expect(screen.getByText(/could move to LIKELY AUTHENTIC/)).toBeTruthy();
+    expect(screen.getByText(/Verifying "Inconsistent compression in text area" would move the decision to LIKELY AUTHENTIC/)).toBeTruthy();
   });
 
   it('legacy records without fusion still render through the legacy risk panel', () => {
     const r = results();
     const legacy = { ...r, fusion: undefined, risk: { score: 12, level: 'low', factors: [], recommendation: 'accept', summary: 'No issues detected.' } };
     render(<ResultsView results={legacy} images={IMG} />);
-    expect(screen.queryAllByText('System assessment').length).toBe(0);
+    expect(screen.queryAllByText('Document assessment').length).toBe(0);
     expect(screen.getByText('Risk assessment')).toBeTruthy();
     expect(screen.getByText('Suggested: accept')).toBeTruthy();
     expect(screen.getByText('Document data')).toBeTruthy();
@@ -137,7 +137,7 @@ describe('DecisionBar — officer decision vs system assessment', () => {
     const onDecide = vi.fn(async () => {});
     render(<DecisionBar recommendation="flag" aiDecision="review" onDecide={onDecide} sticky={false} />);
     expect(screen.getByText('Officer decision')).toBeTruthy();
-    expect(screen.getByText('System: Review')).toBeTruthy();
+    expect(screen.getByText('System: Review required')).toBeTruthy();
     expect(screen.getByText('suggested').closest('button').textContent).toMatch(/Review/);
     expect(screen.queryByText(/AI:/)).toBeNull();
     fireEvent.change(screen.getByLabelText('Officer note'), { target: { value: 'Verified against authorized source' } });

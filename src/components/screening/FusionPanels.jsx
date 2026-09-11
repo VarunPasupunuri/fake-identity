@@ -9,6 +9,7 @@ import { DOCUMENT_TYPE_LABEL } from '../../modules/types.js';
 import { DECISION } from '../../modules/fusion/index.js';
 import { DECISION_UI, fusionRows, topFactors, unavailableEvidence, pivotSentence, SOURCE_LABEL } from './fusionView.js';
 import { formatDate, cx, RISK_STYLES } from '../../lib/format.js';
+import { getProfile } from '../../modules/documents/registry.js';
 
 const TONE = {
   green: { text: 'status-ok', badge: 'badge-ok', icon: CheckCircle2, bar: 'bg-[var(--ok)]' },
@@ -17,8 +18,8 @@ const TONE = {
   slate: { text: 'status-neutral', badge: 'badge-neutral', icon: HelpCircle, bar: 'bg-[var(--neutral)]' },
 };
 
-const STATUS_LABEL = { pass: 'PASS', warn: 'WARN', fail: 'FAIL', unavailable: 'UNAVAILABLE', info: 'INFO' };
-const STATUS_TONE = { pass: 'ok', warn: 'warn', fail: 'danger', unavailable: 'neutral', info: 'info' };
+const STATUS_LABEL = { pass: 'PASS', warn: 'WARN', fail: 'FAIL', unavailable: 'UNAVAILABLE', info: 'INFO', not_applicable: 'N/A' };
+const STATUS_TONE = { pass: 'ok', warn: 'warn', fail: 'danger', unavailable: 'neutral', info: 'info', not_applicable: 'outline' };
 const SEVERITY_TONE = { critical: 'danger', high: 'danger', medium: 'warn', low: 'neutral', none: 'neutral' };
 
 export function StatusChip({ status }) {
@@ -32,7 +33,7 @@ function Points({ value, suffix }) {
 /* ------------------------------------------------------------------ */
 /* 1 + 2 + 8: system assessment, risk vs confidence, insufficient state */
 /* ------------------------------------------------------------------ */
-export function DecisionPanel({ fusion, documentType, ocr, children }) {
+export function DecisionPanel({ fusion, documentType, ocr, classification, children }) {
   const ui = DECISION_UI[fusion.decision] || DECISION_UI[DECISION.INSUFFICIENT];
   const t = TONE[ui.tone];
   const Icon = t.icon;
@@ -42,12 +43,18 @@ export function DecisionPanel({ fusion, documentType, ocr, children }) {
   const conf = fusion.confidence || { score: 0, components: [] };
   const riskStyle = RISK_STYLES[risk.level] || RISK_STYLES.low;
   const f = ocr?.fields || {};
-  const complete = missing.length === 0;
+  const profile = getProfile(documentType);
+  const issuerMissing = missing.some((e) => e.source === 'issuer');
+  const otherMissing = missing.filter((e) => e.source !== 'issuer');
+  const complete = otherMissing.length === 0;
+  const subject = f.fullName || f[profile.subjectField] || 'Unknown subject';
+  const identifier = f.documentNumber || f.visaNumber || f[profile.primaryIdentifier] || 'No document number';
+  const subjectMeta = [f.nationality, f.dateOfBirth ? `born ${formatDate(f.dateOfBirth)}` : null, f.dateOfDeath ? `died ${formatDate(f.dateOfDeath)}` : null, f.institution || f.university || f.organization || f.issuingAuthority || null].filter(Boolean).join(' · ');
   return (
     <section className="card overflow-hidden animate-slide-up" aria-labelledby="system-assessment-heading">
       <div className={cx('grid gap-6 p-4 sm:p-6', children ? 'lg:grid-cols-[minmax(0,1fr)_18rem]' : 'lg:grid-cols-1')}>
         <div className="min-w-0">
-          <p className="t-label">System assessment</p>
+          <p className="t-label">Document assessment</p>
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <Icon className={cx('h-7 w-7 shrink-0', t.text)} aria-hidden="true" />
             <h2 id="system-assessment-heading" className="t-display">{ui.label}</h2>
@@ -71,18 +78,19 @@ export function DecisionPanel({ fusion, documentType, ocr, children }) {
             </div>
             <div>
               <dt className="t-label">Document type</dt>
-              <dd className="mt-1 t-body font-medium">{DOCUMENT_TYPE_LABEL[documentType] || documentType}</dd>
+              <dd className="mt-1 t-body font-medium">{DOCUMENT_TYPE_LABEL[documentType] || profile.label}</dd>
+              <dd className="mt-1 t-caption muted">{classification ? (classification.overridden ? 'Selected by officer' : `Classification confidence ${Math.round((classification.confidence || 0) * 100)}%`) : 'Selected by officer'}</dd>
             </div>
             <div>
               <dt className="t-label">Verification status</dt>
-              <dd className="mt-1 t-body font-medium">{complete ? 'Complete' : 'Incomplete'}</dd>
-              <dd className="mt-1 t-caption muted">{complete ? 'All configured checks produced a result' : `${missing.length} check${missing.length === 1 ? '' : 's'} unavailable`}</dd>
+              <dd className="mt-1 t-body font-medium">{fusion.decision === DECISION.VERIFIED ? 'Verified against issuer record' : complete ? 'Document-level analysis complete' : 'Analysis incomplete'}</dd>
+              <dd className="mt-1 t-caption muted">{fusion.decision === DECISION.VERIFIED ? 'An issuer source confirmed the record' : issuerMissing ? `Issuer verification not performed${otherMissing.length ? ` · ${otherMissing.length} other check${otherMissing.length === 1 ? '' : 's'} unavailable` : ''}` : complete ? 'All configured checks produced a result' : `${otherMissing.length} check${otherMissing.length === 1 ? '' : 's'} unavailable`}</dd>
             </div>
           </dl>
 
           <div className="mt-5 border-t divider pt-4">
-            <h3 className="truncate t-h2">{f.fullName || 'Unknown subject'}</h3>
-            <p className="t-body-sm muted"><span className="t-code">{f.documentNumber || f.visaNumber || 'No document number'}</span> · {f.nationality || '—'}{f.dateOfBirth ? ` · born ${formatDate(f.dateOfBirth)}` : ''}</p>
+            <h3 className="truncate t-h2">{subject}</h3>
+            <p className="t-body-sm muted"><span className="t-code">{identifier}</span>{subjectMeta ? ` · ${subjectMeta}` : ''}</p>
             <p className="mt-3 t-body">{fusion.rationale}</p>
           </div>
 
@@ -144,10 +152,10 @@ export function EvidenceFusionPanel({ fusion }) {
   const rows = fusionRows(fusion);
   const overall = fusion.trust?.overall;
   return (
-    <Card title="Verification signals" subtitle="Evidence dimensions and the document trust profile" icon={Activity} padded={false}
+    <Card title="Trust profile" subtitle="Evidence dimensions with their trust scores" icon={Activity} padded={false}
       actions={overall?.available ? <span className="t-body-sm muted">Overall trust <span className="t-code tabular text-[var(--ink)]">{overall.score}</span> / 100</span> : <span className="t-caption faint">Overall trust unavailable</span>}>
       <div className="overflow-x-auto">
-        <table className="table table-compact" aria-label="Verification signals">
+        <table className="table table-compact" aria-label="Trust profile">
           <thead>
             <tr><th scope="col">Signal</th><th scope="col">Finding</th><th scope="col" className="w-36">Trust</th><th scope="col" className="w-28">Status</th></tr>
           </thead>
@@ -158,6 +166,7 @@ export function EvidenceFusionPanel({ fusion }) {
                 <td className="max-w-xs"><span className="line-clamp-2 t-body-sm muted">{r.findings.length ? r.findings.join(' · ') : r.unavailableReason || r.hint}</span></td>
                 <td aria-label={`${r.label} trust ${r.trust === undefined ? 'not scored' : r.trust ?? 'unavailable'}`}>
                   {r.trust === undefined ? <span className="t-caption faint">—</span>
+                    : r.status === 'not_applicable' ? <span className="t-caption faint">N/A</span>
                     : r.trust === null ? <span className="t-caption faint">Unavailable</span>
                       : <div className="flex items-center gap-2"><ProgressBar value={r.trust} tone={r.trust >= 75 ? 'bg-[var(--ok)]' : r.trust >= 50 ? 'bg-[var(--warn)]' : 'bg-[var(--danger)]'} className="w-16" /><span className="t-code tabular">{r.trust}</span></div>}
                 </td>

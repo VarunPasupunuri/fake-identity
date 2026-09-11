@@ -1,4 +1,5 @@
 import { isValidIsoDate } from './mrz.js';
+import { UNIVERSAL_FIELD_LABELS } from '../documents/fields.js';
 
 const ISO3 = /^[A-Z]{3}$/;
 
@@ -19,6 +20,7 @@ export const REQUIRED_FIELDS = {
 };
 
 export const FIELD_LABELS = {
+  ...UNIVERSAL_FIELD_LABELS,
   fullName: 'Full name',
   surname: 'Surname',
   givenNames: 'Given names',

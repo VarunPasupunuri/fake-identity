@@ -52,7 +52,7 @@ export async function uploadScreeningImages({ uid, screeningId, documentImage, l
  * Persist a completed screening (module outputs) — decision may be added later.
  * @returns {Promise<string>} screening id
  */
-export async function createScreening({ user, documentType, images, ocr, validation, tampering, face, watchlist, risk, fusion, providers, durationMs, onWarning }) {
+export async function createScreening({ user, documentType, requestedType, documentCategory, classification, images, ocr, validation, tampering, barcode, face, watchlist, identity, issuer, risk, fusion, providers, durationMs, onWarning }) {
   const id = newId();
   const stored = await uploadScreeningImages({ uid: user.uid, screeningId: id, documentImage: images.document, liveImage: images.live });
   if (stored.warning) onWarning?.(stored.warning);
@@ -64,6 +64,10 @@ export async function createScreening({ user, documentType, images, ocr, validat
     officerName: user.displayName || user.email,
     checkpoint: user.checkpoint || CHECKPOINT_ID,
     documentType,
+    // Universal document model (null on records created before document profiles existed).
+    documentCategory: documentCategory || fusion?.documentCategory || null,
+    requestedType: requestedType || null,
+    classification: classification ? stripUndefined(classification) : null,
     subjectName: ocr?.fields?.fullName || null,
     documentNumber: ocr?.fields?.documentNumber || ocr?.fields?.visaNumber || null,
     nationality: ocr?.fields?.nationality || null,
@@ -80,8 +84,11 @@ export async function createScreening({ user, documentType, images, ocr, validat
     validation,
     tampering: tampering ? stripUndefined({ ...tampering, evidence: { ...tampering.evidence, elaImage: imageStorage !== 'inline' && tampering.evidence?.elaImage && tampering.evidence.elaImage.length < 300000 ? tampering.evidence.elaImage : null } }) : null,
     face: face ? stripUndefined(face) : null,
-    // Watchlist screening result (null on records created before the module existed).
+    // QR / barcode, watchlist, identity correlation and issuer verification results (null on older records).
+    barcode: barcode ? stripUndefined(barcode) : null,
     watchlist: watchlist ? stripUndefined(watchlist) : null,
+    identity: identity ? stripUndefined(identity) : null,
+    issuer: issuer ? stripUndefined(issuer) : null,
     risk: risk || null,
     // Evidence fusion output (evidence items, correlations, confidence, four-way decision, chain, counterfactual).
     fusion: fusion ? stripUndefined(fusion) : null,

@@ -53,7 +53,7 @@ export default function ScreeningDetailPage({ investigation = false }) {
   };
 
   const timeline = [
-    { t: row.createdAt, label: 'Document screened', body: `${DOCUMENT_TYPE_LABEL[row.documentType]} · ${row.officerName} · ${row.checkpoint}` },
+    { t: row.createdAt, label: 'Document screened', body: `${DOCUMENT_TYPE_LABEL[row.documentType] || row.documentType} · ${row.officerName} · ${row.checkpoint}` },
     row.ocr && { t: row.createdAt, label: 'Verification completed', body: `Extraction ${row.providers?.ocr} · integrity ${row.providers?.tamper} · face ${row.providers?.face}${row.providers?.watchlist ? ` · watchlist ${row.providers.watchlist}` : ''}${typeof row.processingMs === 'number' ? ` · ${(row.processingMs / 1000).toFixed(1)} s` : ''}` },
     (row.aiDecision || row.fusion?.decision) && { t: row.createdAt, label: `System assessment: ${(row.aiDecision || row.fusion?.decision).replace('_', ' ')}`, body: row.fusion?.rationale || '' },
     row.decidedAt && { t: row.decidedAt, label: `Officer decision: ${row.decision}`, body: row.decisionNote ? `“${row.decisionNote}”` : 'No officer note' },
@@ -63,7 +63,7 @@ export default function ScreeningDetailPage({ investigation = false }) {
     <div>
       <PageHeader crumbs={[{ label: investigation ? 'Investigations' : 'Screening history', to: investigation ? '/investigations' : '/history' }, { label: caseId(row) }]}
         title={row.subjectName || 'Unknown subject'}
-        subtitle={`${caseId(row)} · ${DOCUMENT_TYPE_LABEL[row.documentType]} · ${row.documentNumber || 'no document number'} · ${formatDateTime(row.createdAt)}`}
+        subtitle={`${caseId(row)} · ${DOCUMENT_TYPE_LABEL[row.documentType] || row.documentType} · ${row.documentNumber || 'no document number'} · ${formatDateTime(row.createdAt)}`}
         actions={<div className="no-print flex flex-wrap gap-2">
           <button className="btn-secondary btn-sm" onClick={() => { navigator.clipboard?.writeText(window.location.href); toast.success('Link copied'); }}><Copy className="h-4 w-4" aria-hidden="true" />Copy link</button>
           <button className="btn-secondary btn-sm" onClick={() => downloadText(`case-${caseId(row)}.json`, JSON.stringify(auditJson(row), null, 2), 'application/json')}><Download className="h-4 w-4" aria-hidden="true" />Case record</button>
@@ -78,7 +78,7 @@ export default function ScreeningDetailPage({ investigation = false }) {
         <div><p className="t-label">Officer decision</p><p className="mt-0.5 flex flex-wrap items-center gap-2"><DecisionBadge decision={row.decision} />{row.decidedAt && <span className="t-caption">{formatDateTime(row.decidedAt)}</span>}</p></div>
       </section>
 
-      <ResultsView results={row} images={images} mode={investigation ? 'investigation' : 'review'}>
+      <ResultsView results={row} images={images} mode={investigation ? 'investigation' : 'review'} linkBase={investigation ? '/investigations' : '/history'}>
         {canDecide ? <DecisionBar recommendation={row.risk?.recommendation} aiDecision={row.aiDecision || row.fusion?.decision} onDecide={decide} sticky={false} /> : (
           <div className="rounded-md hairline p-3 text-sm">
             <p className="t-label">Officer decision</p>

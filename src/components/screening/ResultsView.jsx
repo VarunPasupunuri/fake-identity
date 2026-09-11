@@ -1,13 +1,18 @@
 import { useState } from 'react';
-import { ScanFace, FileText, ShieldAlert, ListChecks, ChevronDown, ChevronUp, Gauge, LayoutGrid } from 'lucide-react';
+import { ScanFace, FileText, ShieldAlert, ListChecks, ChevronDown, ChevronUp, Gauge, LayoutGrid, QrCode } from 'lucide-react';
 import { Card, RiskBadge, Badge, StatusIcon, AnnotatedImage, ProgressBar, Tabs } from '../ui/index.jsx';
 import { FIELD_LABELS } from '../../modules/validation/rules.js';
 import { DOCUMENT_TYPE_LABEL } from '../../modules/types.js';
+import { getProfile, expectedFieldKeys } from '../../modules/documents/registry.js';
+import { DATE_FIELD_KEYS, IDENTIFIER_FIELD_KEYS } from '../../modules/documents/fields.js';
 import { formatDate, cx, RISK_STYLES } from '../../lib/format.js';
 import { DecisionPanel, WhyPanel, EvidenceFusionPanel, CorrelationsPanel, EvidenceChainPanel, CounterfactualPanel } from './FusionPanels.jsx';
+import { SignalsPanel, EvidenceGroupsPanel, LimitationsPanel, BarcodePanel, IdentityPanel } from './UniversalPanels.jsx';
 
-const DATE_FIELDS = new Set(['dateOfBirth', 'expiryDate', 'validFrom', 'validUntil']);
-const FIELD_ORDER = ['fullName', 'surname', 'givenNames', 'documentNumber', 'visaNumber', 'visaType', 'nationality', 'issuingCountry', 'dateOfBirth', 'gender', 'expiryDate', 'validFrom', 'validUntil', 'entries', 'stayDuration', 'optionalData'];
+const DATE_FIELDS = new Set(DATE_FIELD_KEYS);
+const ID_FIELDS = new Set([...IDENTIFIER_FIELD_KEYS, 'documentNumber', 'visaNumber']);
+const LEGACY_ORDER = ['fullName', 'surname', 'givenNames', 'documentNumber', 'visaNumber', 'visaType', 'nationality', 'issuingCountry', 'dateOfBirth', 'gender', 'expiryDate', 'validFrom', 'validUntil', 'entries', 'stayDuration', 'optionalData'];
+const HIDDEN_FIELDS = new Set(['marks', 'subjects']); // rendered as a table, not as a field chip
 
 /**
  * Verification result. With fusion output (current pipeline) the order is:
@@ -18,36 +23,43 @@ const FIELD_ORDER = ['fullName', 'surname', 'givenNames', 'documentNumber', 'vis
  * `images`  = { document, live }
  * `mode`    is accepted for callers that render the same view in a different context (e.g. investigation) and is currently informational only.
  */
-export default function ResultsView({ results, images, children }) {
-  const { documentType, ocr, validation, tampering, face, risk, fusion, providers } = results;
+export default function ResultsView({ results, images, children, linkBase = '/history' }) {
+  const { documentType, ocr, validation, tampering, barcode, face, identity, risk, fusion, providers, classification } = results;
+  const profile = getProfile(documentType);
+  const faceApplies = profile.face !== 'not_applicable';
   const [tab, setTab] = useState('all');
   const tabs = [
     { value: 'all', label: 'Overview', icon: LayoutGrid },
     { value: 'data', label: 'Data', icon: FileText, count: Object.keys(ocr?.fields || {}).length },
     { value: 'checks', label: 'Checks', icon: ListChecks, count: validation?.failed || 0 },
     { value: 'tamper', label: 'Integrity', icon: ShieldAlert, count: tampering?.flags?.length || 0 },
-    { value: 'face', label: 'Face', icon: ScanFace },
+    ...(barcode ? [{ value: 'codes', label: 'Codes', icon: QrCode, count: barcode.codes?.length || 0 }] : []),
+    ...(faceApplies || face ? [{ value: 'face', label: 'Face', icon: ScanFace }] : []),
   ];
   const show = (k) => tab === 'all' || tab === k;
   const hasFusion = Boolean(fusion && fusion.decision);
   return (
     <div className="space-y-5">
       {hasFusion
-        ? <DecisionPanel fusion={fusion} documentType={documentType} ocr={ocr}>{children}</DecisionPanel>
+        ? <DecisionPanel fusion={fusion} documentType={documentType} ocr={ocr} classification={classification}>{children}</DecisionPanel>
         : <RiskPanel risk={risk} documentType={documentType} ocr={ocr} face={face} tampering={tampering}>{children}</RiskPanel>}
       {hasFusion && tab === 'all' && (
         <div className="grid gap-5 lg:grid-cols-2">
+          <SignalsPanel fusion={fusion} />
           <WhyPanel fusion={fusion} />
-          <EvidenceFusionPanel fusion={fusion} />
         </div>
       )}
+      {hasFusion && tab === 'all' && <EvidenceGroupsPanel fusion={fusion} />}
       {hasFusion && tab === 'all' && <CorrelationsPanel fusion={fusion} />}
       <Tabs tabs={tabs} value={tab} onChange={setTab} className="lg:hidden" />
       <div className="grid gap-5 lg:grid-cols-2">
-        {show('data') && <ExtractedDataPanel ocr={ocr} validation={validation} provider={providers?.ocr} />}
+        {show('data') && <ExtractedDataPanel ocr={ocr} validation={validation} provider={providers?.ocr} documentType={documentType} />}
         {show('checks') && <ValidationPanel validation={validation} />}
         {show('tamper') && <TamperingPanel tampering={tampering} image={images?.document} provider={providers?.tamper} />}
-        {show('face') && <FacePanel face={face} images={images} provider={providers?.face} />}
+        {show('codes') && barcode && <BarcodePanel barcode={barcode} validation={validation} image={images?.document} />}
+        {show('face') && (faceApplies || face) && <FacePanel face={face} images={images} provider={providers?.face} applicability={profile.face} />}
+        {tab === 'all' && identity && <IdentityPanel identity={identity} linkBase={linkBase} />}
+        {hasFusion && tab === 'all' && <EvidenceFusionPanel fusion={fusion} />}
       </div>
       {hasFusion && tab === 'all' && (
         <div className="grid gap-5 lg:grid-cols-2">
@@ -55,6 +67,7 @@ export default function ResultsView({ results, images, children }) {
           <CounterfactualPanel fusion={fusion} />
         </div>
       )}
+      {hasFusion && tab === 'all' && <LimitationsPanel fusion={fusion} results={results} />}
     </div>
   );
 }
@@ -118,23 +131,42 @@ function Contribution({ label, pts, max, extra }) {
   );
 }
 
-export function ExtractedDataPanel({ ocr, validation, provider }) {
+export function ExtractedDataPanel({ ocr, validation, provider, documentType }) {
   const [showRaw, setShowRaw] = useState(false);
   if (!ocr?.fields) return <Card title="Document data" icon={FileText}><p className="t-body-sm status-danger">Extraction failed — no text could be read. Verify the document manually.</p></Card>;
   const failedFields = new Set((validation?.checks || []).filter((c) => c.status === 'fail' && c.field).map((c) => c.field));
   const warnFields = new Set((validation?.checks || []).filter((c) => c.status === 'warn' && c.field).map((c) => c.field));
-  const keys = FIELD_ORDER.filter((k) => ocr.fields[k] !== undefined);
+  const profile = getProfile(documentType);
+  // Only fields relevant to the detected document type are shown, in the profile's order; derived duplicates are hidden.
+  const order = profile.legacy ? LEGACY_ORDER : [...expectedFieldKeys(profile.id), ...LEGACY_ORDER];
+  const derived = new Set(profile.legacy ? [] : [profile.subjectField !== 'fullName' ? 'fullName' : null, profile.primaryIdentifier !== 'documentNumber' ? 'documentNumber' : null].filter(Boolean));
+  const keys = [...new Set(order)].filter((k) => ocr.fields[k] !== undefined && !HIDDEN_FIELDS.has(k) && !derived.has(k));
+  const marks = Array.isArray(ocr.fields.marks) ? ocr.fields.marks : [];
+  const render = (k) => {
+    const v = ocr.fields[k];
+    if (Array.isArray(v)) return v.map((x) => (typeof x === 'object' ? x.subject || JSON.stringify(x) : x)).join(', ');
+    if (DATE_FIELDS.has(k)) return formatDate(v);
+    return String(v);
+  };
   return (
-    <Card title="Document data" subtitle={`${provider || ocr.provider} · ${Math.round(ocr.confidence * 100)}% extraction confidence${ocr.mrz ? ` · MRZ ${ocr.mrz.format}` : ' · no MRZ'}`} icon={FileText}>
-      {keys.length === 0 ? <p className="t-body-sm muted">No fields could be extracted.</p> : (
+    <Card title="Document data" subtitle={`${provider || ocr.provider} · ${Math.round(ocr.confidence * 100)}% extraction confidence${ocr.mrz ? ` · MRZ ${ocr.mrz.format}` : profile.legacy ? ' · no MRZ' : ` · ${profile.label}`}`} icon={FileText}>
+      {keys.length === 0 && marks.length === 0 ? <p className="t-body-sm muted">No fields could be extracted.</p> : (
         <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {keys.map((k) => (
             <div key={k} className={cx('rounded-sm border px-3 py-2', failedFields.has(k) ? 'border-[var(--danger)] bg-[var(--danger-soft)]' : warnFields.has(k) ? 'border-[var(--warn)] bg-[var(--warn-soft)]' : 'divider bg-[var(--surface-2)]')}>
               <dt className="t-label">{FIELD_LABELS[k] || k}</dt>
-              <dd className={cx('truncate t-body font-medium', (k === 'documentNumber' || k === 'visaNumber') && 't-code')}>{DATE_FIELDS.has(k) ? formatDate(ocr.fields[k]) : ocr.fields[k]}</dd>
+              <dd className={cx('truncate t-body font-medium', ID_FIELDS.has(k) && 't-code')} title={render(k)}>{render(k)}</dd>
             </div>
           ))}
         </dl>
+      )}
+      {marks.length > 0 && (
+        <div className="mt-3 overflow-x-auto">
+          <table className="table table-compact" aria-label="Marks table">
+            <thead><tr><th scope="col">Subject</th><th scope="col" className="text-right">Marks</th><th scope="col" className="text-right">Max</th><th scope="col">Grade</th></tr></thead>
+            <tbody>{marks.map((r, i) => <tr key={i}><td>{r.subject}</td><td className="text-right tabular">{r.marks}</td><td className="text-right tabular">{r.max ?? '—'}</td><td>{r.grade || '—'}</td></tr>)}</tbody>
+          </table>
+        </div>
       )}
       {ocr.mrz && (
         <div className="mt-3 overflow-x-auto rounded-sm border divider bg-[var(--surface-2)] p-3 t-code leading-5">
@@ -204,7 +236,8 @@ export function TamperingPanel({ tampering, image, provider }) {
   );
 }
 
-export function FacePanel({ face, images, provider }) {
+export function FacePanel({ face, images, provider, applicability = 'required' }) {
+  if (!face && applicability === 'not_applicable') return <Card title="Face comparison" icon={ScanFace} actions={<Badge tone="outline">Not applicable</Badge>}><p className="t-body-sm muted">This document type carries no holder photograph, so no biometric comparison applies. This is not a failure.</p></Card>;
   if (!face) return <Card title="Face comparison" icon={ScanFace}><p className="t-body-sm status-warn">Face comparison was skipped or failed — no live photo was compared.</p></Card>;
   const compared = face.documentFaceFound && face.liveFaceFound;
   const tone = !compared ? 'faint' : face.confidence >= 75 ? 'status-ok' : face.confidence >= 50 ? 'status-warn' : 'status-danger';

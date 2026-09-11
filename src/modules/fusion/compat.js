@@ -6,7 +6,7 @@
 import { DECISION, DECISION_LABEL } from './constants.js';
 
 const LEGACY_TO_FUSION = { accept: DECISION.APPROVE, flag: DECISION.REVIEW, reject: DECISION.REJECT };
-const FUSION_TO_LEGACY = { approve: 'accept', review: 'flag', reject: 'reject', insufficient_evidence: 'flag' };
+const FUSION_TO_LEGACY = { approve: 'accept', review: 'flag', reject: 'reject', insufficient_evidence: 'flag', verified: 'accept' };
 
 /** Legacy officer decision → fusion vocabulary. Unknown/empty → null. */
 export function fromLegacyDecision(value) {

@@ -12,10 +12,12 @@ import { demoStore } from '../services/demoStore.js';
 import { cx } from '../lib/format.js';
 
 const MODULES = [
-  { key: 'ocr', label: 'OCR extraction' },
-  { key: 'tamper', label: 'Tampering detection' },
-  { key: 'face', label: 'Face verification' },
+  { key: 'ocr', label: 'Text recognition' },
+  { key: 'tamper', label: 'Integrity analysis' },
+  { key: 'barcode', label: 'QR / barcode reading' },
+  { key: 'face', label: 'Face comparison' },
   { key: 'watchlist', label: 'Watchlist screening' },
+  { key: 'issuer', label: 'Issuer verification' },
 ];
 
 export default function SettingsPage() {

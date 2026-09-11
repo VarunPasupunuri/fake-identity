@@ -5,14 +5,30 @@
  */
 import { parseMrz, isValidIsoDate } from './mrz.js';
 import { DOC_NUMBER_PATTERNS, REQUIRED_FIELDS, FIELD_LABELS, ISO3, daysBetween, todayIso, ageFromDob } from './rules.js';
+import { getProfile, LEGACY_TYPES } from '../documents/registry.js';
+import { validateWithProfile, barcodeChecks, summarise } from '../documents/validate.js';
 
 /**
- * @param {import('../types.js').DocumentType} documentType
+ * Validate a document.
+ *  - Travel / identity types (passport, visa, national ID, driving licence, permit) run the
+ *    original rule set below, unchanged.
+ *  - Every other profile (certificates, academic, employment, generic…) runs the declarative
+ *    profile rule engine in modules/documents/validate.js.
+ * Both paths append QR / barcode consistency checks when a barcode result is supplied.
+ *
+ * @param {string} documentType
  * @param {import('../types.js').OcrResult} ocr
- * @param {{ now?: Date }} [opts]
+ * @param {{ now?: Date, barcode?: Object|null }} [opts]
  * @returns {import('../types.js').ValidationResult}
  */
 export function validateDocument(documentType, ocr, opts = {}) {
+  if (!LEGACY_TYPES.includes(documentType)) return validateWithProfile(getProfile(documentType), ocr, opts);
+  const legacy = validateLegacy(documentType, ocr, opts);
+  if (!opts.barcode) return legacy;
+  return summarise([...legacy.checks, ...barcodeChecks(opts.barcode, ocr?.fields || {}, getProfile(documentType))]);
+}
+
+function validateLegacy(documentType, ocr, opts = {}) {
   const now = opts.now || new Date();
   const today = todayIso(now);
   const f = ocr?.fields || {};

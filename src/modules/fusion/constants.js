@@ -5,17 +5,24 @@
 
 /** Four-way decision vocabulary used by the fusion engine. */
 export const DECISION = Object.freeze({
-  APPROVE: 'approve',
-  REVIEW: 'review',
-  REJECT: 'reject',
+  APPROVE: 'approve',              // document-level evidence: LIKELY AUTHENTIC
+  REVIEW: 'review',                // REVIEW REQUIRED
+  REJECT: 'reject',                // SUSPICIOUS
   INSUFFICIENT: 'insufficient_evidence',
+  VERIFIED: 'verified',            // only when an authorised issuer source confirmed the record
 });
 
+/**
+ * Officer-facing labels. Stored values keep the original vocabulary (approve | review | reject |
+ * insufficient_evidence) so older records stay readable; `verified` is only ever produced when an
+ * issuer provider actually confirmed the document.
+ */
 export const DECISION_LABEL = Object.freeze({
-  approve: 'Approve',
-  review: 'Review',
-  reject: 'Reject',
+  approve: 'Likely authentic',
+  review: 'Review required',
+  reject: 'Suspicious',
   insufficient_evidence: 'Insufficient evidence',
+  verified: 'Verified',
 });
 
 /** Evidence sources (one per analysis module, plus fusion itself). */
@@ -27,6 +34,8 @@ export const SOURCE = Object.freeze({
   CLASSIFICATION: 'classification',
   WATCHLIST: 'watchlist',
   IDENTITY: 'identity',
+  BARCODE: 'barcode',
+  ISSUER: 'issuer',
   FUSION: 'fusion',
 });
 
@@ -50,8 +59,13 @@ export const RISK = Object.freeze({
   ocr: { lowConfidence: 6 },
   // Optional future modules (contract only — no provider implemented yet)
   watchlist: { match: 30, possible: 15, weakPossible: 5, weakBelow: 0.5 }, // possible hits below `weakBelow` confidence (name-only) count as weak
-  identity: { link: 10 },
+  identity: { link: 10, conflicting: 15 },
   classification: { lowConfidence: 4 },
+  // QR / barcode readability and consistency are scored by the validation rules (barcode_* checks);
+  // the module's own evidence carries no points so a code is never double-counted.
+  barcode: { none: 0 },
+  // Issuer verification: absence from an issuer register is a review signal, a contradiction is conclusive.
+  issuer: { notFound: 8, mismatch: 25 },
   // Cross-module correlations (bounded so a correlation can raise but never dominate the score)
   correlation: {
     mrz_field_tamper: 12, // MRZ↔visual mismatch on a field + tampering flag on that same field
@@ -69,7 +83,7 @@ export const RISK = Object.freeze({
  * the document regardless of the risk band. Everything else (MRZ mismatches, check-digit
  * failures, tampering flags…) needs the risk band or a critical correlation to reject.
  */
-export const REJECT_ON_FAIL = Object.freeze(['validation:expiry_not_passed', 'validation:expiry_valid', 'watchlist:result']);
+export const REJECT_ON_FAIL = Object.freeze(['validation:expiry_not_passed', 'validation:expiry_valid', 'watchlist:result', 'issuer:result']);
 
 /** Core analysis modules; when one is unavailable the document cannot be APPROVED without officer inspection. */
 export const CORE_UNAVAILABLE_IDS = Object.freeze(['tampering:unavailable', 'face:unavailable', 'face:not_compared']);
@@ -89,6 +103,7 @@ export const RISK_THRESHOLDS = Object.freeze({ review: 30, reject: 60 });
 export const CONFIDENCE = Object.freeze({
   ocr: 30, structure: 10, tampering: 20, face: 25, providers: 15,
   faceNotFound: 5,
+  faceNotApplicable: 25, // biometric comparison does not apply (certificates etc.): the analysis is not less complete
   thresholds: { insufficient: 50, approve: 70, highRiskNeeds: 60 },
 });
 

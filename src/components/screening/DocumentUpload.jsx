@@ -1,19 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import { Upload, Camera, RefreshCw, BookUser, Stamp, IdCard, Car, FileBadge, AlertTriangle, CheckCircle2, Loader2, FolderOpen } from 'lucide-react';
-import { DOCUMENT_TYPES } from '../../modules/types.js';
+import { Upload, Camera, RefreshCw, BookUser, Stamp, IdCard, Car, FileBadge, AlertTriangle, CheckCircle2, Loader2, FolderOpen, Wand2, ScrollText, GraduationCap, Briefcase, Award, FileQuestion, Vote, FileHeart } from 'lucide-react';
+import { SELECTOR_OPTIONS, AUTO_DETECT, selectionGuidance } from '../../modules/documents/registry.js';
 import { fileToDataUrl, resizeDataUrl } from '../../lib/image.js';
 import { assessImageQuality } from '../../lib/imageQuality.js';
 import { Alert } from '../ui/index.jsx';
 import DocumentCamera from './DocumentCamera.jsx';
 import { cx } from '../../lib/format.js';
 
-const ICONS = { passport: BookUser, visa: Stamp, national_id: IdCard, driving_license: Car, permit: FileBadge };
-const HINTS = {
-  passport: 'Open to the photo page. Both MRZ lines must be fully visible.',
-  visa: 'Include the visa sticker and its MRZ if present.',
-  national_id: 'Front side with photo. Flatten the card to avoid glare.',
-  driving_license: 'Front side. Ensure licence number and validity are legible.',
-  permit: 'Include the permit number, validity dates and any stamps.',
+const ICONS = {
+  [AUTO_DETECT]: Wand2, passport: BookUser, visa: Stamp, national_id: IdCard, driving_license: Car, permit: FileBadge, voter_id: Vote,
+  birth_certificate: ScrollText, death_certificate: FileHeart, 'category:academic': GraduationCap, 'category:employment': Briefcase, 'category:certificate': Award, generic_document: FileQuestion,
 };
 const ACCEPT = 'image/jpeg,image/png,image/webp,image/*';
 const MAX_BYTES = 15 * 1024 * 1024;
@@ -24,7 +20,7 @@ const MAX_BYTES = 15 * 1024 * 1024;
  *   Upload file      → native file picker
  * Both paths produce the same { dataUrl, file, name } object for the pipeline.
  */
-export default function DocumentUpload({ documentType, onDocumentType, image, onImage, onNext, showGuide = true }) {
+export default function DocumentUpload({ documentType, onDocumentType, image, onImage, onNext, showGuide = true, nextLabel = 'Continue to live photo' }) {
   const fileRef = useRef(null);
   const [mode, setMode] = useState('choose'); // choose | camera
   const [drag, setDrag] = useState(false);
@@ -63,12 +59,12 @@ export default function DocumentUpload({ documentType, onDocumentType, image, on
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
       <div className="space-y-6">
-        {/* Document type */}
+        {/* Document type — auto-detect by default; manual selection fixes the type */}
         <fieldset>
           <legend className="t-label mb-2">Document type</legend>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5" role="radiogroup" aria-label="Document type">
-            {DOCUMENT_TYPES.map((d) => {
-              const Icon = ICONS[d.value];
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4" role="radiogroup" aria-label="Document type">
+            {SELECTOR_OPTIONS.map((d) => {
+              const Icon = ICONS[d.value] || FileBadge;
               const active = documentType === d.value;
               return (
                 <button key={d.value} type="button" role="radio" aria-checked={active} onClick={() => onDocumentType(d.value)}
@@ -79,7 +75,7 @@ export default function DocumentUpload({ documentType, onDocumentType, image, on
               );
             })}
           </div>
-          <p className="mt-2 t-caption">{HINTS[documentType]}</p>
+          <p className="mt-2 t-caption">{selectionGuidance(documentType)}</p>
         </fieldset>
 
         {/* Document source */}
@@ -138,7 +134,7 @@ export default function DocumentUpload({ documentType, onDocumentType, image, on
         </div>
 
         <div className="flex justify-end border-t divider pt-4">
-          <button type="button" className="btn-primary sm:min-w-52" disabled={!image || busy} onClick={onNext}>Continue to live photo</button>
+          <button type="button" className="btn-primary sm:min-w-52" disabled={!image || busy} onClick={onNext}>{nextLabel}</button>
         </div>
       </div>
 
@@ -149,18 +145,20 @@ export default function DocumentUpload({ documentType, onDocumentType, image, on
             <li>Lay the document flat on a dark, matte surface.</li>
             <li>Fill the frame and keep all four corners visible.</li>
             <li>Avoid glare on laminates and holograms; tilt slightly if needed.</li>
-            <li>MRZ lines must be sharp: they are read first.</li>
+            <li>Keep MRZ lines, seals and QR codes sharp: they are read first.</li>
           </ul>
         </div>
         <div>
           <p className="t-h3">What happens next</p>
           <ol className="mt-2 list-decimal space-y-1 pl-4 t-body-sm muted">
-            <li>Document text and MRZ are extracted.</li>
-            <li>Fields are checked against format and validity rules.</li>
+            <li>The document type is detected and its information extracted.</li>
+            <li>Fields are checked against that document type's rules.</li>
             <li>The image is analysed for alteration and edited metadata.</li>
-            <li>The live photo is compared with the document photo.</li>
-            <li>Identifiers are screened against the configured watchlist.</li>
+            <li>Any QR code or barcode is read and compared with the printed fields.</li>
+            <li>Where a holder photograph applies, the live photo is compared with it.</li>
+            <li>Identifiers are screened against the configured watchlist and prior cases.</li>
           </ol>
+          <p className="mt-2 t-caption faint">Official issuer verification requires an authorised external data source and is reported separately.</p>
         </div>
       </aside>
     </div>
