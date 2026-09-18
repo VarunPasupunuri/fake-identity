@@ -14,7 +14,7 @@ import { checksumIndicators, recoverFromCheckDigit } from './consistency.js';
 import { tamperChecklist, tamperRegions, finalVerdict, VERDICT, CHECK_STATUS, TAMPER_CHECKS } from './report.js';
 import { analysePixels } from '../tampering/analysis.js';
 import { toGray, copyMove, aspectAnomaly, outliers, tile, noiseResidual } from '../tampering/forensics.js';
-import { buildTd3, parseMrz, extractMrzLines } from '../validation/mrz.js';
+import { buildTd3, parseMrz, extractMrzLines, normaliseMrzLine } from '../validation/mrz.js';
 import { runIssuerVerification, issuerStatusLabel } from '../issuer/index.js';
 import { runScreening } from '../../services/screeningPipeline.js';
 
@@ -1065,8 +1065,15 @@ describe('REGRESSION: the reported photograph, as it was actually read', () => {
     expect(v.headline).not.toBe(VERDICT.TAMPERED);
   });
 
-  it('reads filler that came back as letters as filler again', () => {
-    expect(zone(ALTERED).lines[0]).toBe('P<INDPASUPUNURI<<VARUNSKUMARS<<<<<<<<<<<<<<<');
+  it('reads runs of filler that came back as letters as filler again', () => {
+    // Only K, L, I and 1. A name is worth more than a clean-looking line: S, R, C
+    // and E are read for filler too, but they are also ERIC, LESLIE and CLARK, and
+    // scrubbing those leaves the zone disagreeing with the printed name.
+    expect(zone(ALTERED).lines[0]).toContain('PASUPUNURI');
+    expect(zone(ALTERED).lines[0]).toContain('VARUN');
+    expect(normaliseMrzLine('P<INDSMITH<<ERIC<<<<<<<<<<<<<<<<<<<<<<<<<<<<')).toContain('ERIC');
+    expect(normaliseMrzLine('P<GBRCLARK<<LESLIE<<<<<<<<<<<<<<<<<<<<<<<<<<')).toContain('LESLIE');
+    expect(normaliseMrzLine('P<INDDEMO<<ANITA<KKKKKKKKKK<<<<')).toBe('P<INDDEMO<<ANITA<<<<<<<<<<<<<<<');
   });
 });
 
@@ -1115,5 +1122,40 @@ describe('REGRESSION: the unaltered passport, from the same clipped capture', ()
     const nonsense = ['P<INDPASUPUNURI<<VARUN<KUMAR<<<<<<<<<<<<<<<<', 'INDINDINDINDINDINDINDINDINDINDINDINDINDINDI'];
     const mrz = extractMrzLines(nonsense.join('\n'));
     if (mrz) expect(parseMrz(mrz).checks.filter((c) => c.ok).length).toBeLessThan(2);
+  });
+});
+
+describe('a name is the same name however it is written', () => {
+  const MRZ_NAME = buildTd3({ docCode: 'P<', issuingCountry: 'IND', surname: 'DEMO', givenNames: 'ANITA', documentNumber: 'X1234567', nationality: 'IND', dateOfBirth: '2006-11-03', gender: 'F', expiryDate: '2031-06-30' });
+  const status = (printedName, mrz = MRZ_NAME) => {
+    const r = analyse({ ...passportOcr({ fullName: printedName }, { mrz }) });
+    return (r.compared.find((c) => c.field === 'fullName') || {}).status;
+  };
+
+  it('the zone puts the surname first and the page usually puts it last', () => {
+    expect(status('ANITA DEMO')).toBe('agree');
+  });
+
+  it('a middle initial in only one of them is not a difference', () => {
+    expect(status('ANITA K DEMO')).toBe('agree');
+  });
+
+  it('padding that came back stuck to the last word is not a difference', () => {
+    // A photographed zone returns ANITA<<<<< as ANITAKK, and the letters stick to
+    // the name. Reading that as a changed name accuses a genuine passport.
+    const speckled = { ...MRZ_NAME, lines: ['P<INDDEMO<<ANITAKK<K<K<<<<<<<<<<<<<<<<<<<<<<', MRZ_NAME.lines[1]] };
+    expect(status('ANITA DEMO', speckled)).toBe('agree');
+  });
+
+  it('but one name becoming another still is', () => {
+    expect(status('PRIYA DEMO')).toBe('disagree');
+    expect(status('ANITA SHARMA')).toBe('disagree');
+  });
+
+  it('and a real name is never scrubbed out of the zone as if it were padding', () => {
+    for (const line of ['P<INDSMITH<<ERIC<<<<<<<<<<<<<<<<<<<<<<<<<<<<', 'P<GBRCLARK<<LESLIE<<<<<<<<<<<<<<<<<<<<<<<<<<']) {
+      const kept = normaliseMrzLine(line);
+      expect(kept).toBe(line);
+    }
   });
 });

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { checkDocumentType, blocksScreening, PREFLIGHT, MISMATCH_FLOOR } from './preflight.js';
+import { SELECTOR_OPTIONS, resolveSelection, GENERIC_DOCUMENT } from './registry.js';
 import { fixtureText } from './fixtures.js';
 import { sampleText } from '../ocr/mock.js';
 import { buildTd3, parseMrz } from '../validation/mrz.js';
@@ -175,5 +176,71 @@ describe('preflight guards the screening pipeline', () => {
     const pre = checkDocumentType({ selected: 'passport', rawText: PASSPORT_TEXT, mrz: PASSPORT_MRZ });
     const out = await runScreening({ documentType: 'passport', documentImage: IMG, liveImage: IMG, options: { useMock: true, scenario: 'clean_passport', preflight: pre } }, { log: () => {} });
     expect(out.preflight).toMatchObject({ status: PREFLIGHT.MATCH, selectedType: 'passport', detectedType: 'passport' });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+describe('a manual selection is checked against what the document actually is', () => {
+  const text = (type) => sampleText(type, 'clean');
+  const verdict = (selected, actual) => checkDocumentType({ selected, rawText: text(actual) });
+
+  // Every type the officer can actually pick, against a document of that same type.
+  const SELECTABLE = SELECTOR_OPTIONS.map((o) => o.value).filter((v) => resolveSelection(v).type && v !== GENERIC_DOCUMENT);
+
+  it('allows each selectable type against a document of that type', () => {
+    for (const type of SELECTABLE) {
+      const r = verdict(type, type);
+      expect(`${type}: ${r.status}`).toBe(`${type}: ${PREFLIGHT.MATCH}`);
+      expect(r.blocking).toBe(false);
+    }
+  });
+
+  it('blocks every other pairing of two confidently different types', () => {
+    for (const selected of SELECTABLE) {
+      for (const actual of SELECTABLE) {
+        if (selected === actual) continue;
+        const r = verdict(selected, actual);
+        expect(`${selected} vs ${actual}: ${r.blocking}`).toBe(`${selected} vs ${actual}: true`);
+        expect(r.detectedType).toBe(actual);
+      }
+    }
+  });
+
+  it('names both types, so the officer can see what to change', () => {
+    const r = verdict('passport', 'visa');
+    expect(r.selectedType).toBe('passport');
+    expect(r.detectedType).toBe('visa');
+    expect(r.status).toBe(PREFLIGHT.MISMATCH);
+  });
+
+  it('auto-detect asserts nothing, so nothing can contradict it', () => {
+    for (const actual of SELECTABLE) {
+      const r = checkDocumentType({ selected: 'auto', rawText: text(actual) });
+      expect(r.blocking).toBe(false);
+      expect(r.detectedType).toBe(actual);
+    }
+  });
+
+  it('a category selection allows any type inside it and blocks types outside', () => {
+    const inside = checkDocumentType({ selected: 'category:academic', rawText: text('marks_memo') });
+    expect(inside.blocking).toBe(false);
+    const outside = checkDocumentType({ selected: 'category:academic', rawText: text('passport') });
+    expect(outside.blocking).toBe(true);
+  });
+
+  it('never blocks on a document it could not identify', () => {
+    // Blocking is an accusation about the officer's selection; a document the
+    // classifier cannot place is a reason to look again, not to refuse.
+    for (const selected of SELECTABLE) {
+      const r = checkDocumentType({ selected, rawText: 'SOME OFFICIAL DOCUMENT WITH NO DISTINGUISHING WORDING AT ALL' });
+      expect(r.blocking).toBe(false);
+    }
+  });
+
+  it('nothing here is specific to a document: the check is selection against detection', () => {
+    // The same text, read as two different selections, differs only in the verdict.
+    const t = text('passport');
+    expect(checkDocumentType({ selected: 'passport', rawText: t }).blocking).toBe(false);
+    expect(checkDocumentType({ selected: 'visa', rawText: t }).blocking).toBe(true);
   });
 });

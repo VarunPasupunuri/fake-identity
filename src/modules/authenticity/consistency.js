@@ -60,17 +60,42 @@ export function canonical(kind, value) {
   }
 }
 
+/** A word may be truncated or have speckle stuck to it, but not become another word. */
+const NAME_STEM = 4;
+const NAME_TAIL = 2;
+
+/** Two name words are the same word when one is the other plus a short tail. */
+function wordsAgree(a, b) {
+  if (a === b) return true;
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  return short.length >= NAME_STEM && long.startsWith(short) && long.length - short.length <= NAME_TAIL;
+}
+
 /**
- * A name is often abbreviated in one representation and not the other
- * ("ANITA SHARMA" vs "ANITA K SHARMA"). Treat one as agreeing with the other when
- * every word of the shorter appears, in order, in the longer.
+ * Whether two renderings of a name are the same name.
+ *
+ * They are rarely written identically. One is often abbreviated ("ANITA SHARMA"
+ * against "ANITA K SHARMA"). The zone prints the surname first and the page
+ * usually prints it last, so the words arrive in different orders. The zone
+ * truncates a long name to fit its field. And a photographed zone returns the
+ * padding after a name speckled with letters, which stick to the last word —
+ * ANITA read back as ANITAKK.
+ *
+ * So the words are matched as a set rather than a sequence, and a word matches
+ * one that is itself plus a short tail. What that cannot absorb is one name
+ * becoming another: PRIYA and ANITA share no stem and still disagree.
  */
 function namesAgree(a, b) {
   if (a === b) return true;
   const [short, long] = a.length <= b.length ? [a.split(' '), b.split(' ')] : [b.split(' '), a.split(' ')];
-  let i = 0;
-  for (const w of long) if (i < short.length && w === short[i]) i += 1;
-  return i === short.length && short.length > 0;
+  if (!short.length || !short[0]) return false;
+  const taken = new Array(long.length).fill(false);
+  return short.every((w) => {
+    const at = long.findIndex((v, i) => !taken[i] && wordsAgree(w, v));
+    if (at < 0) return false;
+    taken[at] = true;
+    return true;
+  });
 }
 
 /**

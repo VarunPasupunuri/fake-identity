@@ -34,7 +34,11 @@ export function useDocumentPreflight({ providers, useMock, scenario, mockDocumen
   const check = useCallback(async (image, selected) => {
     if (!image?.dataUrl) { reset(); return null; }
     const id = ++runId.current;
-    const key = image.dataUrl;
+    // Recognise the same image the screening will analyse — the full-resolution
+    // original, not the working copy kept for display. Detection is only as good
+    // as the text, and the pipeline reuses this pass rather than repeating it, so
+    // reading a smaller image here would quietly downgrade the whole screening.
+    const key = image.analysisUrl || image.dataUrl;
     const sel = resolveSelection(selected);
 
     // Same image, already recognised → only the comparison needs redoing.
@@ -50,7 +54,7 @@ export function useDocumentPreflight({ providers, useMock, scenario, mockDocumen
     try {
       const ocr = await runOcr({
         provider: useMock ? 'mock' : providers?.ocr,
-        imageDataUrl: image.dataUrl,
+        imageDataUrl: key,
         documentType: sel.type || 'auto',
         scenario,
         mockDocument,
@@ -76,7 +80,10 @@ export function useDocumentPreflight({ providers, useMock, scenario, mockDocumen
   }, [providers?.ocr, useMock, scenario, mockDocument, reset]);
 
   /** The OCR output for the checked image, so the pipeline does not recognise it twice. */
-  const takeOcr = useCallback((image) => (image?.dataUrl && cache.current.imageKey === image.dataUrl ? cache.current.ocr : null), []);
+  const takeOcr = useCallback((image) => {
+    const k = image?.analysisUrl || image?.dataUrl;
+    return k && cache.current.imageKey === k ? cache.current.ocr : null;
+  }, []);
 
   return { state, result, check, reset, takeOcr, blocking: Boolean(result?.blocking) };
 }

@@ -67,7 +67,7 @@ export function extractMrzLines(rawText) {
   const td3Start = td3.findIndex((l) => /^[PV][A-Z<]/.test(l));
   if (td3Start >= 0 && td3[td3Start + 1]) {
     const l1 = padTo(td3[td3Start], 44);
-    return { format: 'TD3', lines: [l1, padTo(realignTd3Line2(td3[td3Start + 1], clean(l1.slice(2, 5))), 44)] };
+    return { format: 'TD3', lines: [l1, padTo(repairTd3Numerics(realignTd3Line2(td3[td3Start + 1], clean(l1.slice(2, 5)))), 44)] };
   }
   // TD1: three lines of 30 starting with I<, A<, C<
   const td1 = candidates.filter((l) => l.length >= 28 && l.length <= 32);
@@ -85,17 +85,23 @@ export function extractMrzLines(rawText) {
 }
 
 /**
- * Fix the usual OCR confusions in an MRZ line. `<` is read as «, (, [, {, and long
- * filler runs (`<<<<<`) as K/L/I/1 sequences; a run of 5+ such characters next to a
- * `<` or at the end of the line is never real data, so it is turned back into filler.
+ * Fix the usual OCR confusions in an MRZ line.
+ *
+ * `<` is read as «, (, [, {, and long filler runs come back as K, L, I or 1 — a
+ * run of those next to a `<` or at the end of the line is never real data.
+ *
+ * Only those four letters. S, R, C and E are read for filler too, but they occur
+ * constantly in real names — ERIC, LESLIE, CLARK — and treating them as filler
+ * deletes the name out of the zone. It then disagrees with the name printed on
+ * the page, and a genuine passport is reported as having had its name altered:
+ * a false accusation, traded for a little more tolerance of a speckled capture.
+ * Where speckle does survive here it costs at most the name comparison, and the
+ * dates and numbers that carry the finding are untouched by it.
  */
 export function normaliseMrzLine(line) {
   let l = line.toUpperCase().replace(/[«»(){}\[\]]/g, '<').replace(/[^A-Z0-9<]/g, '');
-  // A run of letters butted against filler, or trailing the line, is filler that was
-  // read as letters. Which letters depends on the typeface and the photograph: K, L,
-  // I and 1 are the usual ones, and S, R, C and E appear on a page read at an angle.
-  l = l.replace(/(<)([KLI1SRCE]{3,})/g, (m, lt, run) => lt + '<'.repeat(run.length));
-  l = l.replace(/([KLI1SRCE]{5,})(?=<|$)/g, (run) => '<'.repeat(run.length));
+  l = l.replace(/(<)([KLI1]{3,})/g, (m, lt, run) => lt + '<'.repeat(run.length));
+  l = l.replace(/([KLI1]{5,})(?=<|$)/g, (run) => '<'.repeat(run.length));
   return l;
 }
 
@@ -117,27 +123,62 @@ export function normaliseMrzLine(line) {
 export function realignTd3Line2(l2, issuingCountry) {
   if (!l2 || !/^[A-Z]{3}$/.test(issuingCountry || '')) return l2;
   if (looksLikeTd3Line2(l2, issuingCountry)) return l2;
-  // Every place the code appears is a candidate ruler. How far the line has
-  // slipped is not guessed at: each shift is tried and kept only if the fields it
-  // implies are the shape a zone's fields must be. A code matched by coincidence
-  // puts digits where letters belong and is discarded on that, not on a hunch
-  // about how much of the line could have been lost.
+
+  // Characters LOST off the front. Every place the code appears is a candidate
+  // ruler; how far the line slipped is not guessed at, each shift is tried and
+  // kept only if the fields it implies are the shape a zone's fields must be.
   for (let at = l2.indexOf(issuingCountry); at >= 0; at = l2.indexOf(issuingCountry, at + 1)) {
     const shifted = at < 10 ? '<'.repeat(10 - at) + l2 : l2.slice(at - 10);
     if (looksLikeTd3Line2(shifted, issuingCountry)) return shifted;
   }
+
+  // A character INVENTED inside the line — a speck of the page read as a letter,
+  // or one character recognised as two. That pushes every field after it along
+  // while the ones before stay put, so no single shift of the whole line can put
+  // it right. Dropping one character is tried at each position up to the sex
+  // field, and again only what leaves the fields the right shape is kept.
+  for (let i = 0; i < Math.min(l2.length, 22); i += 1) {
+    const dropped = l2.slice(0, i) + l2.slice(i + 1);
+    if (looksLikeTd3Line2(dropped, issuingCountry)) return dropped;
+  }
   return l2;
 }
 
+/** Letters recognised where only a digit can stand, in the fields that are all digits. */
+const AS_DIGIT = { O: '0', Q: '0', D: '0', I: '1', L: '1', Z: '2', S: '5', B: '8', G: '6', T: '7', A: '4' };
+const digitsOnly = (s) => s.replace(/[A-Z]/g, (c) => AS_DIGIT[c] ?? c);
+
 /** The fixed shape of a second line: a code, two dates, a sex, and their check digits. */
 function looksLikeTd3Line2(l, issuingCountry) {
+  // The date fields are read through the digit map: a date of birth that is only
+  // a date once O is read as 0 is still a date, and the line is still on its
+  // columns. The map is applied for this test alone, never to the stored line.
   return l.length >= 28
     && l.slice(10, 13) === issuingCountry
-    && /^\d{6}$/.test(l.slice(13, 19))    // date of birth
-    && /^[0-9<]$/.test(l[19])             // its check digit
-    && /^[MFX<]$/.test(l[20])             // sex
-    && /^\d{6}$/.test(l.slice(21, 27))    // expiry
-    && /^[0-9<]$/.test(l[27]);            // its check digit
+    && /^\d{6}$/.test(digitsOnly(l.slice(13, 19)))   // date of birth
+    && /^[0-9<]$/.test(digitsOnly(l[19]))            // its check digit
+    && /^[MFX<]$/.test(l[20])                        // sex
+    && /^\d{6}$/.test(digitsOnly(l.slice(21, 27)))   // expiry
+    && /^[0-9<]$/.test(digitsOnly(l[27]));           // its check digit
+}
+
+/**
+ * Put digits back in the fields that can only hold digits.
+ *
+ * The zone is one typeface at one size, and O for 0, S for 5, I for 1 are the
+ * confusions it produces. In a date or a check digit a letter cannot be right,
+ * so the reading is corrected rather than carried forward as damage — a date
+ * that fails to parse takes the whole line's alignment with it. Only these
+ * positions are touched; the name and the document number may legitimately hold
+ * letters and are left exactly as they were read.
+ */
+export function repairTd3Numerics(l) {
+  if (!l || l.length < 28) return l;
+  return l.slice(0, 13)
+    + digitsOnly(l.slice(13, 20))   // date of birth and its check digit
+    + l[20]                         // sex
+    + digitsOnly(l.slice(21, 28))   // expiry and its check digit
+    + l.slice(28);
 }
 
 function padTo(line, n) {
