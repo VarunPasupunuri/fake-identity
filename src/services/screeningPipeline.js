@@ -57,6 +57,8 @@ const now = () => (typeof performance !== 'undefined' && performance.now ? perfo
  * @param {{ documentType: string, documentImage: string, documentFile?: File, liveImage?: string|null, options?: Object }} params
  *   `documentType` may be a profile id, `auto`, or `category:<name>` (see modules/documents/registry.js).
  *   `options.history` (optional) = prior screening rows for identity correlation; `options.mockDocument` = demo document for auto-detect.
+ *   `options.preflightOcr` + `options.preflightOcrImage` let the caller hand over the OCR the document-type
+ *   check already performed on the same image, so recognition runs once per screening.
  * @param {{ modules?: Object, onUpdate?: (stepId: string, patch: Object) => void, isCancelled?: () => boolean, log?: Function }} [deps]
  * @returns {Promise<Object|null>} results, or null when cancelled
  */
@@ -91,9 +93,15 @@ export async function runScreening({ documentType = AUTO_DETECT, documentImage, 
   };
   const skipStep = (id, message) => { out.steps[id] = { status: 'skipped', durationMs: 0 }; onUpdate(id, { status: 'skipped', progress: 100, message }); return null; };
 
-  // 1. OCR — text recognition (the MRZ, when present, is parsed here too)
+  // 1. OCR — text recognition (the MRZ, when present, is parsed here too).
+  // The preflight document-type check already recognised this exact image; reuse
+  // that output rather than running OCR a second time.
   const ocrType = selection.type || AUTO_DETECT;
-  out.ocr = await runStep('ocr', () => mods.ocr({ provider: providers.ocr, imageDataUrl: documentImage, documentType: ocrType, scenario, mockDocument: options.mockDocument, onProgress: progress('ocr') }));
+  const preflightOcr = options.preflightOcr && options.preflightOcrImage === documentImage ? options.preflightOcr : null;
+  out.ocr = preflightOcr
+    ? await runStep('ocr', async () => { progress('ocr')(1, 'Reusing the document type check result'); return preflightOcr; })
+    : await runStep('ocr', () => mods.ocr({ provider: providers.ocr, imageDataUrl: documentImage, documentType: ocrType, scenario, mockDocument: options.mockDocument, onProgress: progress('ocr') }));
+  out.ocrReused = Boolean(preflightOcr);
   if (isCancelled()) return null;
 
   // 2. Classification + profile-driven field extraction
@@ -170,6 +178,7 @@ export async function runScreening({ documentType = AUTO_DETECT, documentImage, 
   out.risk = toLegacyRisk(out.fusion);
   out.decision = out.fusion?.decision || null;
   out.confidence = out.fusion?.confidence?.score ?? null;
+  out.preflight = options.preflight || null;
   out.durationMs = Math.round(now() - startedAt);
   return out;
 }

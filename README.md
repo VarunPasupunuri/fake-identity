@@ -217,9 +217,34 @@ Certificates differ by jurisdiction and issuer, so a profile declares *configura
 1. Add a profile object to `src/modules/documents/profiles.js`: id, label, category, classifier signals, expected fields (with `required` / `pattern`), `subjectField`, `primaryIdentifier`, `mrz`, `face`, `barcode`, `issuer`, `rules`, `guidance`.
 2. That is the whole change. Classification, extraction, validation, evidence fusion, risk, the results UI, storage and history pick it up automatically; only add a selector entry in `registry.js` if it deserves its own button.
 
+### Preflight document-type check
+
+Before any expensive module runs, the captured or uploaded image gets one lightweight OCR pass, is classified on its own terms, and the detected type is compared with the type the officer selected. Selecting **Passport** and presenting an Aadhaar card stops there:
+
+```
+DOCUMENT TYPE MISMATCH
+Selected document   Passport
+Detected document   National ID   95% confidence
+Select National ID, or upload a passport image.
+[Change document type] [Upload another document]
+```
+
+The screening cannot start until the officer resolves it, so passport rules are never applied to a national ID. The result is one of four states:
+
+| Status | Meaning | Blocks screening |
+|---|---|---|
+| **Match** | The detected type agrees with the selection | No |
+| **Mismatch** | Another type is detected with strong signal support, and the selected type has little or none | **Yes** |
+| **Uncertain** | Nothing could be identified confidently, or the text supports both types | No — it warns, never rejects |
+| **Unavailable** | Too little text was recognised to judge | No |
+
+Blocking is deliberately conservative. A mismatch needs the detected type's weighted signals to clear a floor **and** the selected type to be clearly unsupported, so a passport that merely mentions the word "visa" is never blocked. Detection uses text and layout clues only and is not an authenticity check; the officer's selection is never changed silently. The same check runs for both the camera and the upload path, and the OCR it performs is handed to the pipeline so recognition happens once per screening rather than twice. A blocked mismatch creates no screening record, so history stays clean.
+
+Rules live in `src/modules/documents/preflight.js` (pure) with the classifier signals in `profiles.js`; the screening page drives it through `src/hooks/useDocumentPreflight.js`.
+
 ### Screening flow
 
-1. **Document** — choose **Auto-detect** (default), a specific type, or a category; scan with the camera (`getUserMedia`, live preview) or upload a file. The two paths are separate: *Scan with camera* opens the camera, *Upload file* opens the file picker.
+1. **Document** — choose **Auto-detect** (default), a specific type, or a category; scan with the camera (`getUserMedia`, live preview) or upload a file. The two paths are separate: *Scan with camera* opens the camera, *Upload file* opens the file picker. The preflight type check then runs before anything else.
 2. **Live photo** — only when the document profile has a holder photograph; front camera via `getUserMedia` (switchable) or upload, and it may be skipped. For a certificate the step is skipped entirely and face comparison is reported as *not applicable*, never as a failure.
 3. **Processing** — text recognition → classification + field extraction → integrity, QR/barcode, face, watchlist and identity correlation in parallel → validation → issuer verification → evidence fusion. Only the modules relevant to the detected profile run; each step shows live progress and timing.
 4. **Assessment** — risk (0–100) and analysis confidence side by side, the document type with its classification confidence, a verification-signal checklist, supporting / conflicting / unavailable evidence, correlated signals, extracted fields relevant to that document type, validation checklist, integrity flags drawn on the document with an ELA heat-map, decoded QR content, identity correlations, evidence chain, counterfactual, **assessment limitations**, and the officer's **Approve / Review / Reject** decision with a reason.

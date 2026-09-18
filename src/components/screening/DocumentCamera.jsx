@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Camera, RefreshCw, SwitchCamera, Upload, X, Loader2 } from 'lucide-react';
 import { Alert } from '../ui/index.jsx';
+import { dataUrlToBlob } from '../../lib/image.js';
 import { cx } from '../../lib/format.js';
 
 const CONSTRAINTS = (facing, deviceId) => ({
@@ -85,16 +86,19 @@ export default function DocumentCamera({ onCapture, onCancel, onUploadInstead })
     const v = videoRef.current;
     if (!v || !v.videoWidth) return;
     const c = document.createElement('canvas');
-    c.width = v.videoWidth; c.height = v.videoHeight;
-    c.getContext('2d').drawImage(v, 0, 0);
-    c.toBlob((blob) => {
-      if (!blob) return;
-      const name = `document-capture-${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`;
-      const file = new File([blob], name, { type: 'image/jpeg', lastModified: Date.now() });
-      const dataUrl = c.toDataURL('image/jpeg', 0.92);
-      stop();
-      setCaptured({ dataUrl, file, name, width: c.width, height: c.height });
-    }, 'image/jpeg', 0.92);
+    // Draw at the screening pipeline's working size: capturing at full sensor
+    // resolution only to downscale again costs a whole extra decode/encode pass.
+    const MAX_SIDE = 1600;
+    const scale = Math.min(1, MAX_SIDE / Math.max(v.videoWidth, v.videoHeight));
+    c.width = Math.round(v.videoWidth * scale); c.height = Math.round(v.videoHeight * scale);
+    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+    // One JPEG encode: the File is derived from the same data URL rather than
+    // encoding the canvas a second time via toBlob.
+    const dataUrl = c.toDataURL('image/jpeg', 0.92);
+    const name = `document-capture-${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`;
+    const file = new File([dataUrlToBlob(dataUrl)], name, { type: 'image/jpeg', lastModified: Date.now() });
+    stop();
+    setCaptured({ dataUrl, file, name, width: c.width, height: c.height });
   };
 
   const retake = () => { setCaptured(null); setAttempt((a) => a + 1); };

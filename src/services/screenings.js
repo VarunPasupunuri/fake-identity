@@ -52,7 +52,7 @@ export async function uploadScreeningImages({ uid, screeningId, documentImage, l
  * Persist a completed screening (module outputs) — decision may be added later.
  * @returns {Promise<string>} screening id
  */
-export async function createScreening({ user, documentType, requestedType, documentCategory, classification, images, ocr, validation, tampering, barcode, face, watchlist, identity, issuer, risk, fusion, providers, durationMs, onWarning }) {
+export async function createScreening({ user, documentType, requestedType, documentCategory, classification, preflight, images, ocr, validation, tampering, barcode, face, watchlist, identity, issuer, risk, fusion, providers, durationMs, onWarning }) {
   const id = newId();
   const stored = await uploadScreeningImages({ uid: user.uid, screeningId: id, documentImage: images.document, liveImage: images.live });
   if (stored.warning) onWarning?.(stored.warning);
@@ -68,6 +68,9 @@ export async function createScreening({ user, documentType, requestedType, docum
     documentCategory: documentCategory || fusion?.documentCategory || null,
     requestedType: requestedType || null,
     classification: classification ? stripUndefined(classification) : null,
+    // Preflight document-type check (selected vs detected). Blocked mismatches never reach here:
+    // the screening does not start, so no record is created for them.
+    preflight: preflight ? stripUndefined({ status: preflight.status, selectedType: preflight.selectedType, detectedType: preflight.detectedType, confidence: preflight.confidence }) : null,
     subjectName: ocr?.fields?.fullName || null,
     documentNumber: ocr?.fields?.documentNumber || ocr?.fields?.visaNumber || null,
     nationality: ocr?.fields?.nationality || null,
@@ -129,6 +132,25 @@ export async function getScreening(id) {
  * List screenings. Officers see their own; admins see everything.
  * @param {{ user: Object, mine?: boolean, max?: number }} opts
  */
+/**
+ * Slim rows for identity correlation. The full records carry inline images in demo
+ * mode, so the screening page must not hold a hundred of them in memory just to
+ * compare names and document numbers.
+ */
+export async function listIdentityHistory({ user, max = 25 } = {}) {
+  const rows = await listScreenings({ user, mine: true, max });
+  return rows.map((r) => ({
+    id: r.id,
+    subjectName: r.subjectName || null,
+    documentNumber: r.documentNumber || null,
+    documentType: r.documentType || null,
+    nationality: r.nationality || null,
+    createdAt: r.createdAt || null,
+    decision: r.decision || null,
+    ocr: { fields: { dateOfBirth: r.ocr?.fields?.dateOfBirth || null, nationality: r.ocr?.fields?.nationality || null } },
+  }));
+}
+
 export async function listScreenings({ user, mine = true, max = 200 } = {}) {
   if (isDemoMode) {
     const all = demoStore.list(COLLECTION);

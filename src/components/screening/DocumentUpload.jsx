@@ -5,6 +5,7 @@ import { fileToDataUrl, resizeDataUrl } from '../../lib/image.js';
 import { assessImageQuality } from '../../lib/imageQuality.js';
 import { Alert } from '../ui/index.jsx';
 import DocumentCamera from './DocumentCamera.jsx';
+import DocumentTypeAlert from './DocumentTypeAlert.jsx';
 import { cx } from '../../lib/format.js';
 
 const ICONS = {
@@ -20,8 +21,9 @@ const MAX_BYTES = 15 * 1024 * 1024;
  *   Upload file      → native file picker
  * Both paths produce the same { dataUrl, file, name } object for the pipeline.
  */
-export default function DocumentUpload({ documentType, onDocumentType, image, onImage, onNext, showGuide = true, nextLabel = 'Continue to live photo' }) {
+export default function DocumentUpload({ documentType, onDocumentType, image, onImage, onNext, showGuide = true, nextLabel = 'Continue to live photo', preflight }) {
   const fileRef = useRef(null);
+  const typeRef = useRef(null);
   const [mode, setMode] = useState('choose'); // choose | camera
   const [drag, setDrag] = useState(false);
   const [error, setError] = useState('');
@@ -42,17 +44,17 @@ export default function DocumentUpload({ documentType, onDocumentType, image, on
     setError(''); setBusy(true);
     try {
       const raw = await fileToDataUrl(file);
-      const dataUrl = await resizeDataUrl(raw, 1600, 0.95);
+      const dataUrl = await resizeDataUrl(raw, 1600, 0.9);
       onImage({ dataUrl, file, name: file.name, source: 'upload' });
       setMode('choose');
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
 
   const openPicker = () => { setMode('choose'); fileRef.current?.click(); };
-  const onCaptured = async (img) => {
+  const onCaptured = (img) => {
+    // DocumentCamera already draws at the working size, so no second encode here.
     setError('');
-    const dataUrl = await resizeDataUrl(img.dataUrl, 1600, 0.95).catch(() => img.dataUrl);
-    onImage({ ...img, dataUrl });
+    onImage(img);
     setMode('choose');
   };
 
@@ -62,7 +64,7 @@ export default function DocumentUpload({ documentType, onDocumentType, image, on
         {/* Document type — auto-detect by default; manual selection fixes the type */}
         <fieldset>
           <legend className="t-label mb-2">Document type</legend>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4" role="radiogroup" aria-label="Document type">
+          <div ref={typeRef} className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4" role="radiogroup" aria-label="Document type">
             {SELECTOR_OPTIONS.map((d) => {
               const Icon = ICONS[d.value] || FileBadge;
               const active = documentType === d.value;
@@ -131,10 +133,22 @@ export default function DocumentUpload({ documentType, onDocumentType, image, on
             </section>
           )}
           {error && <div className="mt-3"><Alert tone="danger">{error}</Alert></div>}
+
+          {image && preflight && (
+            <DocumentTypeAlert
+              state={preflight.state}
+              result={preflight.result}
+              replaceLabel={image.source === 'camera' ? 'Retake document' : 'Upload another document'}
+              onChangeType={() => { typeRef.current?.querySelector('button')?.focus(); typeRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }}
+              onReplace={() => { onImage(null); setMode(image.source === 'camera' ? 'camera' : 'choose'); if (image.source !== 'camera') setTimeout(() => fileRef.current?.click(), 0); }}
+            />
+          )}
         </div>
 
-        <div className="flex justify-end border-t divider pt-4">
-          <button type="button" className="btn-primary sm:min-w-52" disabled={!image || busy} onClick={onNext}>{nextLabel}</button>
+        <div className="flex flex-col gap-2 border-t divider pt-4 sm:flex-row sm:items-center sm:justify-end">
+          {preflight?.blocking && <p className="t-caption status-danger sm:mr-auto">Screening is blocked until the document type matches.</p>}
+          {preflight?.state === 'checking' && <p className="t-caption muted sm:mr-auto">Checking document type…</p>}
+          <button type="button" className="btn-primary sm:min-w-52" disabled={!image || busy || preflight?.blocking || preflight?.state === 'checking'} onClick={onNext}>{nextLabel}</button>
         </div>
       </div>
 

@@ -5,7 +5,8 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useSettings } from '../context/SettingsContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { useScreeningPipeline } from '../hooks/useScreeningPipeline.js';
-import { createScreening, recordDecision, listScreenings } from '../services/screenings.js';
+import { useDocumentPreflight } from '../hooks/useDocumentPreflight.js';
+import { createScreening, recordDecision, listIdentityHistory } from '../services/screenings.js';
 import DocumentUpload from '../components/screening/DocumentUpload.jsx';
 import LivePhotoCapture from '../components/screening/LivePhotoCapture.jsx';
 import ProcessingSteps from '../components/screening/ProcessingSteps.jsx';
@@ -49,19 +50,29 @@ export default function ScreeningPage() {
   const selectedProfile = selection.type ? getProfile(selection.type) : null;
   const faceApplies = !selectedProfile || selectedProfile.face !== 'not_applicable';
 
+  // Preflight document-type check: one lightweight OCR on the document image,
+  // compared with the selected type before any expensive module starts.
+  const preflight = useDocumentPreflight({ providers: settings.providers, useMock, scenario, mockDocument });
+  useEffect(() => {
+    if (!docImage) { preflight.reset(); return; }
+    preflight.check(docImage, documentType);
+  }, [docImage, documentType, useMock, scenario, mockDocument]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Prior screenings power identity correlation; a failure here never blocks a screening.
   useEffect(() => {
     let live = true;
-    listScreenings({ user, mine: true, max: 100 }).then((rows) => live && setHistory(rows || [])).catch(() => live && setHistory([]));
+    listIdentityHistory({ user, max: 25 }).then((rows) => live && setHistory(rows || [])).catch(() => live && setHistory([]));
     return () => { live = false; };
   }, [user]);
 
   const start = async () => {
     if (startedRef.current) return;
+    // Hard stop: a blocking type mismatch must never reach the screening modules.
+    if (preflight.blocking) return;
     startedRef.current = true;
     setStep(2);
     setSaveError('');
-    const out = await pipeline.run({ documentType, documentImage: docImage.dataUrl, documentFile: docImage.file, liveImage: liveImage?.dataUrl, options: { useMock, scenario, mockDocument, providers: settings.providers, history } });
+    const out = await pipeline.run({ documentType, documentImage: docImage.dataUrl, documentFile: docImage.file, liveImage: liveImage?.dataUrl, options: { useMock, scenario, mockDocument, providers: settings.providers, history, preflight: preflight.result, preflightOcr: preflight.takeOcr(docImage), preflightOcrImage: docImage.dataUrl } });
     if (!out) { startedRef.current = false; return; }
     try {
       const id = await createScreening({ user: { ...user, checkpoint: settings.checkpoint }, requestedType: documentType, images: { document: docImage.dataUrl, live: liveImage?.dataUrl }, ...out, onWarning: (msg) => toast.warn('Image storage fallback', msg) });
@@ -83,8 +94,8 @@ export default function ScreeningPage() {
     setTimeout(() => navigate(`/history/${screeningId}`), 700);
   };
 
-  const restart = () => { pipeline.reset(); startedRef.current = false; setStep(0); setDocImage(null); setLiveImage(null); setScreeningId(null); setDecided(null); setSaveError(''); };
-  const afterDocument = () => (faceApplies ? setStep(1) : start());
+  const restart = () => { pipeline.reset(); preflight.reset(); startedRef.current = false; setStep(0); setDocImage(null); setLiveImage(null); setScreeningId(null); setDecided(null); setSaveError(''); };
+  const afterDocument = () => { if (preflight.blocking) return; return faceApplies ? setStep(1) : start(); };
 
   // Auto-run after live capture when enabled in settings
   useEffect(() => { if (settings.autoRunAfterCapture && step === 1 && liveImage && docImage) start(); }, [liveImage]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -116,7 +127,7 @@ export default function ScreeningPage() {
       <Stepper step={step} />
 
       <div className="mt-6" key={step}>
-        {step === 0 && <div className="animate-fade-in"><DocumentUpload documentType={documentType} onDocumentType={setDocumentType} image={docImage} onImage={setDocImage} onNext={afterDocument} showGuide={settings.captureGuide} nextLabel={faceApplies ? 'Continue to live photo' : 'Run screening'} /></div>}
+        {step === 0 && <div className="animate-fade-in"><DocumentUpload documentType={documentType} onDocumentType={setDocumentType} image={docImage} onImage={setDocImage} onNext={afterDocument} showGuide={settings.captureGuide} nextLabel={faceApplies ? 'Continue to live photo' : 'Run screening'} preflight={preflight} /></div>}
         {step === 1 && <div className="animate-fade-in"><LivePhotoCapture image={liveImage} onImage={setLiveImage} onBack={() => setStep(0)} onNext={start} showGuide={settings.captureGuide} /></div>}
         {step === 2 && <div className="animate-fade-in"><ProcessingSteps steps={pipeline.steps} providers={providers} documentImage={docImage?.dataUrl} /></div>}
         {step === 3 && pipeline.results && (

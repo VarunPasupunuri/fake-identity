@@ -53,7 +53,12 @@ export const PROFILES = [
   {
     id: 'passport', label: 'Passport', category: 'travel', legacy: true,
     aliases: ['travel document'],
-    signals: [{ re: /\bPASSPORT\b/, weight: 0.5 }, { re: /\bP<[A-Z]{3}/, weight: 0.4 }, { re: /\b(?:REPUBLIC|KINGDOM|UNITED STATES|GOVERNMENT) OF\b/, weight: 0.05 }, { re: /\bNATIONALITY\b/, weight: 0.05 }],
+    signals: [
+      { re: /\bPASSPORT\b/, weight: 0.5, label: 'the word "passport"' },
+      { re: /\bP<[A-Z]{3}/, weight: 0.4, label: 'a TD3 passport machine readable zone' },
+      { re: /\b(?:REPUBLIC|KINGDOM|UNITED STATES|GOVERNMENT) OF\b/, weight: 0.05, label: 'an issuing state line' },
+      { re: /\bNATIONALITY\b/, weight: 0.05, label: 'a nationality field' },
+    ],
     fields: [{ key: 'fullName', required: true }, { key: 'documentNumber', required: true }, { key: 'nationality', required: true }, { key: 'dateOfBirth', required: true }, { key: 'expiryDate', required: true }, { key: 'gender', required: true }, { key: 'surname' }, { key: 'givenNames' }, { key: 'issuingCountry' }, { key: 'placeOfBirth' }, { key: 'dateOfIssue' }],
     subjectField: 'fullName', primaryIdentifier: 'documentNumber', mrz: true, face: 'required', barcode: false,
     issuer: { label: 'Passport issuing authority', verification: 'unavailable' }, rules: [],
@@ -62,7 +67,11 @@ export const PROFILES = [
   {
     id: 'visa', label: 'Visa', category: 'travel', legacy: true,
     aliases: ['entry visa', 'visa sticker'],
-    signals: [{ re: /\bVISA\b/, weight: 0.55 }, { re: /\bV<[A-Z]{3}/, weight: 0.25 }, { re: /\b(?:ENTRIES|DURATION OF STAY|VALID FROM)\b/, weight: 0.2 }],
+    signals: [
+      { re: /\bVISA\b/, weight: 0.55, label: 'the word "visa"' },
+      { re: /\bV<[A-Z]{3}/, weight: 0.25, label: 'a visa machine readable zone' },
+      { re: /\b(?:ENTRIES|DURATION OF STAY|VALID FROM)\b/, weight: 0.2, label: 'entry or stay-duration terms' },
+    ],
     fields: [{ key: 'fullName', required: true }, { key: 'visaNumber', required: true }, { key: 'nationality', required: true }, { key: 'dateOfBirth', required: true }, { key: 'validUntil', required: true }, { key: 'visaType' }, { key: 'entries' }, { key: 'validFrom' }, { key: 'stayDuration' }],
     subjectField: 'fullName', primaryIdentifier: 'visaNumber', mrz: true, face: 'required', barcode: false,
     issuer: { label: 'Visa issuing authority', verification: 'unavailable' }, rules: [],
@@ -70,8 +79,17 @@ export const PROFILES = [
   },
   {
     id: 'national_id', label: 'National ID', category: 'identity', legacy: true,
-    aliases: ['identity card', 'id card', 'citizenship card', 'aadhaar'],
-    signals: [{ re: /\b(?:NATIONAL )?IDENTITY CARD\b/, weight: 0.45 }, { re: /\bI[<D][A-Z]{3}/, weight: 0.2 }, { re: /\bID (?:NO|NUMBER)\b/, weight: 0.2 }, { re: /\b(?:CITIZEN|IDENTITY|AADHAAR|UNIQUE IDENTIFICATION)\b/, weight: 0.15 }],
+    aliases: ['identity card', 'id card', 'citizenship card', 'aadhaar', 'unique identification'],
+    signals: [
+      { re: /\b(?:NATIONAL )?IDENTITY CARD\b/, weight: 0.45, label: 'the words "identity card"' },
+      { re: /\bUNIQUE IDENTIFICATION AUTHORITY OF INDIA\b|\bUIDAI\b/, weight: 0.45, label: 'the Unique Identification Authority of India' },
+      { re: /\bAADHAAR\b|\bAADHAR\b/, weight: 0.3, label: 'the word "Aadhaar"' },
+      { re: /\b\d{4}\s\d{4}\s\d{4}\b/, weight: 0.25, label: 'a 12-digit Aadhaar-style number' },
+      { re: /\bVID\s*:?\s*\d/, weight: 0.15, label: 'a virtual ID (VID) field' },
+      { re: /\bI[<D][A-Z]{3}/, weight: 0.2, label: 'an ID-card machine readable zone' },
+      { re: /\bID (?:NO|NUMBER)\b/, weight: 0.2, label: 'an ID-number field' },
+      { re: /\b(?:CITIZEN|IDENTITY)\b/, weight: 0.1, label: 'identity-card terminology' },
+    ],
     fields: [{ key: 'fullName', required: true }, { key: 'documentNumber', required: true }, { key: 'dateOfBirth', required: true }, { key: 'gender' }, { key: 'nationality' }, { key: 'address' }, { key: 'expiryDate' }, { key: 'dateOfIssue' }],
     subjectField: 'fullName', primaryIdentifier: 'documentNumber', mrz: true, face: 'required', barcode: true,
     issuer: { label: 'National identity authority', verification: 'unavailable' }, rules: [],
@@ -80,7 +98,11 @@ export const PROFILES = [
   {
     id: 'driving_license', label: 'Driving Licence', category: 'identity', legacy: true,
     aliases: ['driving license', 'driver licence', 'dl'],
-    signals: [{ re: /\bDRIVING LICEN[CS]E\b/, weight: 0.5 }, { re: /\bDRIVER'?S? LICEN[CS]E\b/, weight: 0.4 }, { re: /\b(?:DL NO|VEHICLE CLASS|COV|LMV|MCWG|TRANSPORT)\b/, weight: 0.1 }],
+    signals: [
+      { re: /\bDRIVING LICEN[CS]E\b/, weight: 0.5, label: 'the words "driving licence"' },
+      { re: /\bDRIVER'?S? LICEN[CS]E\b/, weight: 0.4, label: 'the words "driver licence"' },
+      { re: /\b(?:DL NO|VEHICLE CLASS|COV|LMV|MCWG|TRANSPORT)\b/, weight: 0.1, label: 'licence-number or vehicle-class terms' },
+    ],
     fields: [{ key: 'fullName', required: true }, { key: 'documentNumber', required: true }, { key: 'dateOfBirth', required: true }, { key: 'expiryDate', required: true }, { key: 'dateOfIssue' }, { key: 'address' }, { key: 'vehicleClasses' }, { key: 'bloodGroup' }, { key: 'issuingAuthority' }],
     subjectField: 'fullName', primaryIdentifier: 'documentNumber', mrz: false, face: 'required', barcode: true,
     issuer: { label: 'Transport / licensing authority', verification: 'unavailable' }, rules: [dateOrder('dateOfIssue', 'expiryDate')],
@@ -89,7 +111,12 @@ export const PROFILES = [
   {
     id: 'permit', label: 'Permit / Pass', category: 'travel', legacy: true,
     aliases: ['residence permit', 'border pass', 'work permit'],
-    signals: [{ re: /\bPERMIT\b/, weight: 0.5 }, { re: /\b(?:BORDER|RESIDENCE|WORK|AREA) (?:PERMIT|PASS)\b/, weight: 0.4 }, { re: /\bVALID (?:FROM|UNTIL)\b/, weight: 0.1 }],
+    signals: [
+      { re: /\bPERMIT\b/, weight: 0.5, label: 'the word "permit"' },
+      { re: /\b(?:BORDER|RESIDENCE|WORK|AREA) (?:PERMIT|PASS)\b/, weight: 0.4, label: 'a permit or travel-authorisation heading' },
+      { re: /\bTRAVEL AUTHORI[SZ]ATION\b/, weight: 0.4, label: 'the words "travel authorisation"' },
+      { re: /\bVALID (?:FROM|UNTIL)\b/, weight: 0.1, label: 'validity terms' },
+    ],
     fields: [{ key: 'fullName', required: true }, { key: 'documentNumber', required: true }, { key: 'validUntil', required: true }, { key: 'validFrom' }, { key: 'nationality' }, { key: 'issuingAuthority' }],
     subjectField: 'fullName', primaryIdentifier: 'documentNumber', mrz: false, face: 'optional', barcode: true,
     issuer: { label: 'Permit issuing authority', verification: 'unavailable' }, rules: [],

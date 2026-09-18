@@ -38,6 +38,15 @@ export function scoreProfile(profile, text) {
   return Math.min(1, score);
 }
 
+/** The signals of one profile that actually fired, strongest first — used to explain a detection. */
+export function matchedSignals(profile, rawText) {
+  const text = normaliseText(rawText);
+  return (profile.signals || [])
+    .filter((s) => s.re.test(text))
+    .sort((a, b) => b.weight - a.weight)
+    .map((s) => ({ label: s.label || String(s.re), weight: s.weight }));
+}
+
 /**
  * @param {{ rawText: string, mrz?: { format: string, lines: string[] }|null, hint?: { type?: string|null, category?: string|null } }} args
  * @returns {ClassificationResult}
@@ -50,7 +59,7 @@ export function classifyDocument({ rawText, mrz = null, hint = {} } = {}) {
   // Officer fixed the type: no detection, full confidence, but keep the candidates for transparency.
   if (hintType) {
     const p = getProfile(hintType);
-    return { type: p.id, category: p.category, confidence: 1, candidates: rank(text, null).slice(0, 5), basis: 'officer', overridden: true, provider: CLASSIFICATION_PROVIDER, explanation: `Document type set to ${p.label} by the officer.` };
+    return { type: p.id, category: p.category, confidence: 1, candidates: rank(text, null).slice(0, 5), signals: matchedSignals(p, rawText), basis: 'officer', overridden: true, provider: CLASSIFICATION_PROVIDER, explanation: `Document type set to ${p.label} by the officer.` };
   }
 
   // MRZ document code is decisive (only within the travel/identity categories).
@@ -62,25 +71,26 @@ export function classifyDocument({ rawText, mrz = null, hint = {} } = {}) {
     // A visa sticker sometimes carries a passport-like MRZ; let strong keywords refine within the MRZ family.
     const top = kw[0];
     const chosen = top && top.score >= 0.5 && ['passport', 'visa', 'national_id'].includes(top.type) ? getProfile(top.type) : p;
-    return { type: chosen.id, category: chosen.category, confidence: Math.min(0.99, 0.85 + (top?.type === chosen.id ? top.score * 0.14 : 0)), candidates: kw.slice(0, 5), basis: 'mrz', overridden: false, provider: CLASSIFICATION_PROVIDER, explanation: `Machine readable zone (${mrz.format}, document code ${code}) identifies a ${chosen.label.toLowerCase()}.` };
+    return { type: chosen.id, category: chosen.category, confidence: Math.min(0.99, 0.85 + (top?.type === chosen.id ? top.score * 0.14 : 0)), candidates: kw.slice(0, 5), signals: [{ label: `a ${mrz.format} machine readable zone with document code ${code}`, weight: 0.85 }, ...matchedSignals(chosen, rawText)], basis: 'mrz', overridden: false, provider: CLASSIFICATION_PROVIDER, explanation: `Machine readable zone (${mrz.format}, document code ${code}) identifies a ${chosen.label.toLowerCase()}.` };
   }
 
   const candidates = rank(text, hintCategory);
   const top = candidates[0];
   const second = candidates[1];
+  const signalsFor = (id) => matchedSignals(getProfile(id), rawText);
   if (!top || top.score <= 0) {
     const g = getProfile(GENERIC_DOCUMENT);
-    return { type: g.id, category: hintCategory || g.category, confidence: 0, candidates: [], basis: 'fallback', overridden: false, provider: CLASSIFICATION_PROVIDER, explanation: hintCategory ? `No ${DOCUMENT_CATEGORIES[hintCategory].label.toLowerCase()} type could be recognised from the text; generic screening applied.` : 'No known document type could be recognised from the text; generic screening applied.' };
+    return { type: g.id, category: hintCategory || g.category, confidence: 0, candidates: [], signals: [], basis: 'fallback', overridden: false, provider: CLASSIFICATION_PROVIDER, explanation: hintCategory ? `No ${DOCUMENT_CATEGORIES[hintCategory].label.toLowerCase()} type could be recognised from the text; generic screening applied.` : 'No known document type could be recognised from the text; generic screening applied.' };
   }
   // Confidence = strength of the best match, reduced when the runner-up is close.
   const margin = second ? Math.max(0, top.score - second.score) : top.score;
   const confidence = Math.min(0.99, Math.max(0, top.score * 0.7 + margin * 0.3 + (hintCategory ? 0.1 : 0)));
   if (confidence < CLASSIFICATION_FLOOR) {
     const g = getProfile(GENERIC_DOCUMENT);
-    return { type: g.id, category: hintCategory || g.category, confidence, candidates: candidates.slice(0, 5), basis: 'fallback', overridden: false, provider: CLASSIFICATION_PROVIDER, explanation: `Closest match was ${getProfile(top.type).label} at ${Math.round(confidence * 100)}%, below the ${Math.round(CLASSIFICATION_FLOOR * 100)}% floor; generic screening applied.` };
+    return { type: g.id, category: hintCategory || g.category, confidence, candidates: candidates.slice(0, 5), signals: signalsFor(top.type), basis: 'fallback', overridden: false, provider: CLASSIFICATION_PROVIDER, explanation: `Closest match was ${getProfile(top.type).label} at ${Math.round(confidence * 100)}%, below the ${Math.round(CLASSIFICATION_FLOOR * 100)}% floor; generic screening applied.` };
   }
   const p = getProfile(top.type);
-  return { type: p.id, category: p.category, confidence, candidates: candidates.slice(0, 5), basis: 'keywords', overridden: false, provider: CLASSIFICATION_PROVIDER, explanation: `Text signals identify a ${p.label.toLowerCase()} (${Math.round(confidence * 100)}%)${second && second.score > 0 ? `; next candidate ${getProfile(second.type).label} (${Math.round(second.score * 100)}%)` : ''}.` };
+  return { type: p.id, category: p.category, confidence, candidates: candidates.slice(0, 5), signals: signalsFor(p.id), basis: 'keywords', overridden: false, provider: CLASSIFICATION_PROVIDER, explanation: `Text signals identify a ${p.label.toLowerCase()} (${Math.round(confidence * 100)}%)${second && second.score > 0 ? `; next candidate ${getProfile(second.type).label} (${Math.round(second.score * 100)}%)` : ''}.` };
 }
 
 function rank(text, category) {

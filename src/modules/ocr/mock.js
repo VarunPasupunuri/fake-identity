@@ -66,9 +66,11 @@ export async function extract({ documentType = 'passport', scenario = 'clean', m
   const t0 = performance.now();
   for (let p = 0.1; p <= 1; p += 0.3) { onProgress?.(p, 'Recognising text'); await sleep(180); }
   const sc = scenarioProfile(scenario).ocr;
-  // Auto-detect runs the mock with the demo document chosen by the officer (default passport).
-  const type = documentType === 'auto' || !documentType ? mockDocument || 'passport' : documentType;
-  const rawText = sampleText(mockDocument && documentType === 'auto' ? mockDocument : type, scenario);
+  // `mockDocument` is what was *presented*; `documentType` is what the officer *selected*.
+  // The presented document always wins, so selecting Passport and presenting an Aadhaar
+  // produces Aadhaar text — which is exactly what the preflight type check must catch.
+  const type = mockDocument || (documentType === 'auto' || !documentType ? 'passport' : documentType);
+  const rawText = sampleText(type, scenario);
   const { fields, vizFields, mrz } = parseFields(rawText, SAMPLES[type] ? type : 'generic');
   const confidence = sc === 'unreadable' ? 0.16 : sc === 'poor_ocr' ? 0.42 : 0.93;
   const fieldConfidence = Object.fromEntries(Object.keys(fields).map((k) => [k, confidence]));
