@@ -7,7 +7,7 @@ import { getProfile, expectedFieldKeys } from '../../modules/documents/registry.
 import { DATE_FIELD_KEYS, IDENTIFIER_FIELD_KEYS } from '../../modules/documents/fields.js';
 import { formatDate, cx, RISK_STYLES } from '../../lib/format.js';
 import { DecisionPanel, WhyPanel, EvidenceFusionPanel, CorrelationsPanel, EvidenceChainPanel, CounterfactualPanel } from './FusionPanels.jsx';
-import { SignalsPanel, EvidenceGroupsPanel, LimitationsPanel, BarcodePanel, IdentityPanel, WatchlistPanel, WorkflowStrip, ModuleHeading } from './UniversalPanels.jsx';
+import { SignalsPanel, EvidenceGroupsPanel, LimitationsPanel, BarcodePanel, IdentityPanel, WatchlistPanel, WorkflowStrip, ModuleHeading, DetectionPanel } from './UniversalPanels.jsx';
 
 const DATE_FIELDS = new Set(DATE_FIELD_KEYS);
 const ID_FIELDS = new Set([...IDENTIFIER_FIELD_KEYS, 'documentNumber', 'visaNumber']);
@@ -76,6 +76,7 @@ export default function ResultsView({ results, images, children, linkBase = '/hi
       {show('data') && (
         <section className="space-y-3" aria-label="Module 01 OCR extraction">
           <ModuleHeading module="01" title="OCR extraction" note={ocr ? `${providers?.ocr || ocr.provider} · ${Math.round((ocr.confidence || 0) * 100)}% read confidence` : 'no output'} />
+          <DetectionPanel classification={classification} documentType={documentType} preflight={results.preflight} />
           <ExtractedDataPanel ocr={ocr} validation={validation} provider={providers?.ocr} documentType={documentType} />
         </section>
       )}

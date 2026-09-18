@@ -9,6 +9,7 @@ import { Link } from 'react-router-dom';
 import { Card, Badge, AnnotatedImage, StatusText } from '../ui/index.jsx';
 import { signalChecklist, groupEvidence, assessmentLimitations, SOURCE_LABEL } from './fusionView.js';
 import { classifyDecodedContent } from '../../modules/barcode/decode.js';
+import { getProfile } from '../../modules/documents/registry.js';
 import { ISSUER_NOTICE } from '../../modules/issuer/index.js';
 import { cx, caseId, formatDate } from '../../lib/format.js';
 
@@ -231,6 +232,75 @@ export function WorkflowStrip({ fusion, correlations = 0 }) {
 }
 
 /** Section heading that numbers the four mandatory SIH modules on the results page. */
+/**
+ * Document type detection — what kind of document this is, and the clues behind it.
+ * Deliberately separate from every authenticity panel: an unrecognised type says
+ * nothing about whether a document has been altered.
+ */
+export function DetectionPanel({ classification, documentType, preflight }) {
+  if (!classification) return null;
+  // When the officer fixes the type, the pipeline classifier is told the answer, so its
+  // "confidence" is the officer's assertion rather than a measurement. The preflight check
+  // ran BEFORE the pipeline and without that hint, so it is the honest detection to show.
+  const independent = preflight?.classification || (classification.overridden ? null : classification);
+  const detectedId = preflight?.detectedType || independent?.type || null;
+  const detectedLabel = detectedId ? getProfile(detectedId).label : null;
+  const evidence = independent?.signals || (classification.overridden ? [] : classification.signals) || [];
+  const alternatives = preflight?.alternatives?.length ? preflight.alternatives : independent?.alternatives || [];
+  const basis = !independent
+    ? 'Not independently detected'
+    : independent.basis === 'mrz' ? 'Machine readable zone' : independent.basis === 'fallback' ? 'No specific type recognised' : 'Text and layout signals';
+  return (
+    <Card title="Document type detection" subtitle="What kind of document was presented" icon={ScanSearch}>
+      <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-3">
+        <div>
+          <dt className="t-label">Detected document</dt>
+          <dd className="mt-1 t-body font-medium">{detectedLabel || 'Not detected'}</dd>
+        </div>
+        <div>
+          <dt className="t-label">Classification confidence</dt>
+          <dd className="mt-1 t-body tabular">{independent ? `${Math.round((independent.confidence || 0) * 100)}%` : 'Not measured'}</dd>
+        </div>
+        <div>
+          <dt className="t-label">Basis</dt>
+          <dd className="mt-1 t-body-sm muted">{basis}</dd>
+        </div>
+      </dl>
+
+      <p className="mt-3 t-body-sm muted">
+        {classification.overridden && preflight?.selectedLabel
+          ? `The officer selected ${preflight.selectedLabel}. The detection above was run independently, before screening, without being told that selection.`
+          : classification.overridden
+            ? `The officer set the document type to ${getProfile(documentType).label}; no independent detection was recorded for this screening.`
+            : `Screening applied the ${getProfile(documentType).label.toLowerCase()} rule set.`}
+      </p>
+
+      {alternatives.length > 0 && (
+        <p className="mt-2 t-body-sm">Document type uncertain — competing possibilities: {alternatives.map((a) => a.label).join(', ')}.</p>
+      )}
+
+      {evidence.length > 0 && (
+        <div className="mt-4 border-t divider pt-3">
+          <p className="t-label">Detection evidence</p>
+          <ul className="mt-2 space-y-1.5">
+            {evidence.slice(0, 8).map((e) => (
+              <li key={e.label} className="flex items-start gap-2 t-body-sm">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 faint" aria-hidden="true" />
+                <span>{e.label} detected</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <p className="mt-3 border-t divider pt-3 t-caption muted">
+        Document type detection identifies what kind of document this is. It is not an authenticity check, and an unrecognised
+        document type does not indicate a fake document.
+      </p>
+    </Card>
+  );
+}
+
 export function ModuleHeading({ module, title, note }) {
   return (
     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b divider pb-2">

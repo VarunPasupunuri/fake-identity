@@ -13,13 +13,14 @@
  *   • Blocking is conservative. A document is only blocked when another type is
  *     detected *confidently* and the selected type is clearly not supported by
  *     the text. Anything weaker is UNCERTAIN, which warns but never rejects.
+ *     Poor OCR therefore produces UNCERTAIN, never a mismatch.
  *   • Detection is not authenticity verification. These are layout and wording
  *     clues, nothing more.
  *   • The officer's selection is never silently changed; they must choose.
  */
-import { classifyDocument, CLASSIFICATION_FLOOR } from './classify.js';
+import { classifyDocument, CLASSIFICATION_FLOOR, scoreProfile } from './classify.js';
 import { getProfile, resolveSelection, GENERIC_DOCUMENT, DOCUMENT_CATEGORIES } from './registry.js';
-import { scoreProfile } from './classify.js';
+import { prepareText } from './textNormalise.js';
 
 /** @typedef {'match'|'mismatch'|'uncertain'|'unavailable'} PreflightStatus */
 export const PREFLIGHT = Object.freeze({ MATCH: 'match', MISMATCH: 'mismatch', UNCERTAIN: 'uncertain', UNAVAILABLE: 'unavailable' });
@@ -51,9 +52,12 @@ const label = (id) => getProfile(id).label;
 export function checkDocumentType({ selected, rawText, mrz = null, classification = null }) {
   const sel = resolveSelection(selected);
   const selectedLabel = sel.type ? label(sel.type) : sel.category ? DOCUMENT_CATEGORIES[sel.category]?.label || sel.category : 'Auto-detect';
-  const base = { selectedType: sel.type, selectedLabel, detectedType: null, detectedLabel: '', confidence: 0, signals: [], classification: null };
+  const base = { selectedType: sel.type, selectedLabel, detectedType: null, detectedLabel: '', confidence: 0, signals: [], alternatives: [], classification: null };
 
   const text = String(rawText || '').trim();
+  // Normalise once and hand the same prepared views to the classifier and to every
+  // score below, so the detection and the blocking decision can never disagree.
+  const prepared = prepareText(text);
   if (text.length < MIN_TEXT_LENGTH) {
     return {
       ...base, status: PREFLIGHT.UNAVAILABLE, blocking: false,
@@ -63,16 +67,18 @@ export function checkDocumentType({ selected, rawText, mrz = null, classificatio
   }
 
   // Classify without the officer's hint: the point is to see the document on its own terms.
-  const cls = classification || classifyDocument({ rawText: text, mrz });
+  const cls = classification || classifyDocument({ rawText: prepared, mrz });
   const detectedType = cls.type;
   const detectedLabel = label(detectedType);
   const confidence = Number(cls.confidence) || 0;
   const signals = cls.signals || [];
-  const found = { ...base, detectedType, detectedLabel, confidence, signals, classification: cls };
+  // Competing types the classifier could not separate — shown to the officer rather than hidden.
+  const alternatives = (cls.alternatives || []).filter((a) => a.type !== detectedType);
+  const found = { ...base, detectedType, detectedLabel, confidence, signals, alternatives, classification: cls };
 
   // Auto-detect or a category selection: nothing was asserted that the document can contradict.
   if (!sel.type) {
-    if (sel.category && detectedType !== GENERIC_DOCUMENT && scoreProfile(getProfile(detectedType), String(text).toUpperCase()) >= MISMATCH_FLOOR && getProfile(detectedType).category !== sel.category) {
+    if (sel.category && detectedType !== GENERIC_DOCUMENT && scoreProfile(getProfile(detectedType), prepared) >= MISMATCH_FLOOR && getProfile(detectedType).category !== sel.category) {
       return {
         ...found, status: PREFLIGHT.MISMATCH, blocking: true,
         title: 'Document type mismatch',
@@ -97,16 +103,15 @@ export function checkDocumentType({ selected, rawText, mrz = null, classificatio
     };
   }
 
-  const upper = String(text).toUpperCase();
-  const selectedScore = scoreProfile(getProfile(sel.type), upper);
-  const detectedScore = detectedType === GENERIC_DOCUMENT ? 0 : scoreProfile(getProfile(detectedType), upper);
+  const selectedScore = scoreProfile(getProfile(sel.type), prepared);
+  const detectedScore = detectedType === GENERIC_DOCUMENT ? 0 : scoreProfile(getProfile(detectedType), prepared);
 
   // The classifier could not settle on any specific type — never call that a mismatch.
   if (detectedType === GENERIC_DOCUMENT || detectedScore < MISMATCH_FLOOR) {
     return {
       ...found, status: PREFLIGHT.UNCERTAIN, blocking: false, selectedScore, detectedScore,
       title: 'Document type uncertain',
-      message: `The document could not be identified confidently${detectedType !== GENERIC_DOCUMENT ? ` (closest match ${detectedLabel}, ${Math.round(confidence * 100)}%)` : ''}. Check that ${selectedLabel} is correct, or upload a clearer image. Screening can continue.`,
+      message: `The document could not be identified confidently${detectedType !== GENERIC_DOCUMENT ? ` (closest match ${detectedLabel}, ${Math.round(confidence * 100)}%)` : ''}${alternatives.length ? `; it could also be ${alternatives.map((a) => a.label).join(' or ')}` : ''}. Check that ${selectedLabel} is correct, or upload a clearer image. Screening can continue.`,
     };
   }
 

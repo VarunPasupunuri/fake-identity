@@ -141,6 +141,7 @@ export const DEMO_DOCUMENTS = Object.freeze([
   { value: 'national_id', label: 'National ID' },
   { value: 'aadhaar', label: 'Aadhaar / National ID (India)' },
   { value: 'driving_license', label: 'Driving licence' },
+  { value: 'permit', label: 'Permit / travel authorisation' },
   { value: 'voter_id', label: 'Voter ID' },
   { value: 'birth_certificate', label: 'Birth certificate' },
   { value: 'death_certificate', label: 'Death certificate' },

@@ -42,7 +42,7 @@ const SAMPLES = {
   visa: (sc) => `VISA\nIndia Bureau of Immigration\nVisa No. VS2298811  Type TOURIST\nSurname ROY\nGiven Names DIPAK\nNationality BANGLADESHI\nDate of Birth 03 MAR 1979  Sex M\nEntries MULTIPLE  Duration of stay 90 days\nValid From 01/02/2026  Valid Until ${sc === 'suspicious' ? '01/08/2026' : '31/01/2027'}\n${buildTd3({ docCode: 'V<', issuingCountry: 'IND', surname: 'ROY', givenNames: 'DIPAK', documentNumber: 'VS2298811', nationality: 'BGD', dateOfBirth: '1979-03-03', gender: 'M', expiryDate: sc === 'suspicious' ? '2026-08-01' : '2027-01-31' }).lines.join('\n')}`,
   national_id: (sc) => `GOVERNMENT OF NEPAL\nNATIONAL IDENTITY CARD\nID No. 4471-2209-118\nSurname THAPA\nGiven Names SUNITA\nDate of Birth 1995-11-08  Sex F\nNationality NPL\nDate of Expiry ${sc === 'suspicious' ? '2025-01-01' : '2032-11-08'}`,
   driving_license: (sc) => `DRIVING LICENCE\nDL No. MH12 20110012345\nName RAHUL VERMA\nDate of Birth 21-07-1990\nValid Till ${sc === 'suspicious' ? '20-07-2025' : '20-07-2030'}\nBlood Group O+`,
-  permit: (sc) => `BORDER AREA PERMIT\nPermit No. BAP-2026-00918\nName TENZIN DORJI\nNationality BTN\nValid From 01/01/2026\nValid Until ${sc === 'suspicious' ? '15/03/2026' : '31/12/2026'}`,
+  permit: (sc) => `DEMO DISTRICT ADMINISTRATION\nBORDER AREA PERMIT\nPermit No. BAP-2026-00918\nName TENZIN DEMO DORJI\nNationality BTN\nValid From 01/01/2026\nValid Until ${sc === 'suspicious' ? '15/03/2026' : '31/12/2026'}\nIssuing Authority District Magistrate\nJurisdiction SECTOR 4`,
 };
 
 const garble = (s) => s.replace(/[AEIOU]/g, (c, i) => (i % 3 === 0 ? '#' : c)).replace(/0/g, 'O').replace(/1/g, 'l');

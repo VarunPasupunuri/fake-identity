@@ -53,8 +53,24 @@ export default function DocumentTypeAlert({ state, result, onChangeType, onRepla
 
           <p className="mt-3 t-body-sm">{result.message}</p>
 
+          {result.alternatives?.length > 0 && (
+            <p className="mt-2 t-body-sm">
+              Competing possibilities: {result.alternatives.map((a) => a.label).join(', ')}.
+            </p>
+          )}
+
           {result.signals?.length > 0 && (
-            <p className="mt-2 t-caption muted">Detected from {result.signals.slice(0, 3).map((s) => s.label).join(', ')}.</p>
+            <div className="mt-3">
+              <p className="t-label">Detection evidence</p>
+              <ul className="mt-1.5 space-y-1">
+                {result.signals.slice(0, 6).map((s) => (
+                  <li key={s.label} className="t-caption muted flex gap-2">
+                    <span aria-hidden="true">•</span>
+                    <span>{s.label} detected</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
 
           {mismatch && (
