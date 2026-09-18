@@ -6,9 +6,9 @@ import { DECISION } from '../../modules/fusion/index.js';
 
 export const DECISION_UI = {
   [DECISION.VERIFIED]: { label: 'VERIFIED', short: 'Verified', tone: 'green', headline: 'Confirmed against an authorised issuer record; no contradictory evidence found.', legacy: 'accept' },
-  [DECISION.APPROVE]: { label: 'LIKELY AUTHENTIC', short: 'Likely authentic', tone: 'green', headline: 'Document-level evidence is consistent and no contradictory findings were detected. Issuer verification is reported separately.', legacy: 'accept' },
+  [DECISION.APPROVE]: { label: 'APPROVE', short: 'Approve', tone: 'green', headline: 'Document-level evidence is consistent and no contradictory findings were detected. Official issuer verification is reported separately.', legacy: 'accept' },
   [DECISION.REVIEW]: { label: 'REVIEW REQUIRED', short: 'Review required', tone: 'amber', headline: 'Suspicious or incomplete evidence requires officer inspection.', legacy: 'flag' },
-  [DECISION.REJECT]: { label: 'SUSPICIOUS', short: 'Suspicious', tone: 'red', headline: 'Strong evidence of invalidity, alteration or identity mismatch.', legacy: 'reject' },
+  [DECISION.REJECT]: { label: 'REJECT', short: 'Reject', tone: 'red', headline: 'Strong evidence of invalidity, alteration or identity mismatch.', legacy: 'reject' },
   [DECISION.INSUFFICIENT]: { label: 'INSUFFICIENT EVIDENCE', short: 'Insufficient evidence', tone: 'slate', headline: 'Analysis cannot safely determine authenticity because required evidence is unavailable.', legacy: 'flag' },
 };
 

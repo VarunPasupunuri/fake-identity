@@ -28,13 +28,16 @@ export function validateWithProfile(profile, ocr, opts = {}) {
   const checks = [];
   const add = (c) => checks.push({ severity: 'major', ...c });
   const has = (k) => f[k] !== undefined && f[k] !== null && String(f[k]).trim() !== '' && !(Array.isArray(f[k]) && !f[k].length);
+  // Nothing was extracted: no field can be judged absent from the document, only unassessable.
+  const noText = Object.keys(f).length === 0;
 
   // 1. Required fields
   for (const spec of profile.fields.filter((s) => s.required)) {
     const present = has(spec.key);
-    add({ id: `required_${spec.key}`, label: `${L[spec.key] || spec.key} present`, field: spec.key, status: present ? 'pass' : 'fail',
+    add({ id: `required_${spec.key}`, label: `${L[spec.key] || spec.key} present`, field: spec.key, status: present ? 'pass' : noText ? 'skip' : 'fail',
+      unavailable: !present && noText,
       severity: spec.key === profile.subjectField || spec.key === profile.primaryIdentifier ? 'critical' : 'major',
-      detail: present ? `Extracted: ${display(f[spec.key])}` : 'Field could not be read from the document.' });
+      detail: present ? `Extracted: ${display(f[spec.key])}` : noText ? 'Not assessable — no text could be extracted from the document.' : 'Field could not be read from the document.' });
   }
 
   // 2. Identifier formats declared on the profile
@@ -87,7 +90,7 @@ export function validateWithProfile(profile, ocr, opts = {}) {
   // 9. OCR confidence (same id as the legacy engine)
   if (typeof ocr?.confidence === 'number') {
     const pct = Math.round(ocr.confidence * 100);
-    add({ id: 'ocr_confidence', label: 'OCR read quality', status: pct >= 75 ? 'pass' : pct >= 50 ? 'warn' : 'fail', severity: 'minor', detail: `${pct}% overall OCR confidence.` });
+    add({ id: 'ocr_confidence', label: 'OCR read quality', status: noText ? 'skip' : pct >= 75 ? 'pass' : pct >= 50 ? 'warn' : 'fail', unavailable: noText, severity: 'minor', detail: noText ? `${pct}% OCR confidence and no fields recognised — extraction did not produce a usable result.` : `${pct}% overall OCR confidence.` });
   }
 
   return summarise(checks);

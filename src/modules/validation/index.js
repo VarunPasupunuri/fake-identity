@@ -32,6 +32,8 @@ function validateLegacy(documentType, ocr, opts = {}) {
   const now = opts.now || new Date();
   const today = todayIso(now);
   const f = ocr?.fields || {};
+  // Nothing was extracted: no field can be judged absent from the document, only unassessable.
+  const noText = Object.keys(f).length === 0;
   /** @type {import('../types.js').ValidationCheck[]} */
   const checks = [];
   const add = (c) => checks.push({ severity: 'major', ...c });
@@ -43,9 +45,10 @@ function validateLegacy(documentType, ocr, opts = {}) {
       id: `required_${key}`,
       label: `${FIELD_LABELS[key] || key} present`,
       field: key,
-      status: present ? 'pass' : 'fail',
+      status: present ? 'pass' : noText ? 'skip' : 'fail',
+      unavailable: !present && noText,
       severity: key === 'fullName' || key === 'documentNumber' || key === 'visaNumber' ? 'critical' : 'major',
-      detail: present ? `Extracted: ${f[key]}` : 'Field could not be read from the document.',
+      detail: present ? `Extracted: ${f[key]}` : noText ? 'Not assessable — no text could be extracted from the document.' : 'Field could not be read from the document.',
     });
   }
 
@@ -174,9 +177,10 @@ function validateLegacy(documentType, ocr, opts = {}) {
     add({
       id: 'ocr_confidence',
       label: 'OCR read quality',
-      status: pct >= 75 ? 'pass' : pct >= 50 ? 'warn' : 'fail',
+      status: noText ? 'skip' : pct >= 75 ? 'pass' : pct >= 50 ? 'warn' : 'fail',
+      unavailable: noText,
       severity: 'minor',
-      detail: `${pct}% overall OCR confidence.`,
+      detail: noText ? `${pct}% OCR confidence and no fields recognised — extraction did not produce a usable result.` : `${pct}% overall OCR confidence.`,
     });
   }
 

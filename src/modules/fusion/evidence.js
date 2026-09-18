@@ -49,12 +49,14 @@ export function validationCategory(checkId) {
 }
 
 function validationSeverity(check) {
+  if (check.unavailable) return SEVERITY.NONE;
   if (check.status === STATUS.FAIL) return check.severity === 'critical' ? SEVERITY.CRITICAL : check.severity === 'minor' ? SEVERITY.MEDIUM : SEVERITY.HIGH;
   if (check.status === STATUS.WARN) return SEVERITY.LOW;
   return SEVERITY.NONE;
 }
 
 function validationRisk(check) {
+  if (check.unavailable) return 0;
   if (check.status === STATUS.FAIL) return RISK.validation[check.severity] ?? RISK.validation.major;
   if (check.status === STATUS.WARN) return RISK.validation.warn;
   return 0;
@@ -69,7 +71,8 @@ export function evidenceFromValidation(validation, ocr) {
       id: `validation:${c.id}`,
       source: SOURCE.VALIDATION,
       category: validationCategory(c.id),
-      status: c.status === 'skip' ? STATUS.INFO : c.status,
+      // `unavailable` marks a check the module could not assess (e.g. no text extracted) — never a failure.
+      status: c.unavailable ? STATUS.UNAVAILABLE : c.status === 'skip' ? STATUS.INFO : c.status,
       severity: validationSeverity(c),
       label: c.label,
       value: c.field && ocr?.fields?.[c.field] !== undefined ? ocr.fields[c.field] : null,

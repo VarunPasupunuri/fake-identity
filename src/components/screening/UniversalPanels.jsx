@@ -4,9 +4,9 @@
  * identity correlation. Everything shown comes from module output or fusion
  * evidence; sections hide themselves when the data does not exist.
  */
-import { ListChecks, Layers, Info, QrCode, Users, CheckCircle2, AlertTriangle, XCircle, MinusCircle, HelpCircle } from 'lucide-react';
+import { ListChecks, Layers, Info, QrCode, Users, CheckCircle2, AlertTriangle, XCircle, MinusCircle, HelpCircle, ScanSearch, Workflow } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { Card, Badge, AnnotatedImage } from '../ui/index.jsx';
+import { Card, Badge, AnnotatedImage, StatusText } from '../ui/index.jsx';
 import { signalChecklist, groupEvidence, assessmentLimitations, SOURCE_LABEL } from './fusionView.js';
 import { classifyDecodedContent } from '../../modules/barcode/decode.js';
 import { ISSUER_NOTICE } from '../../modules/issuer/index.js';
@@ -158,5 +158,85 @@ export function IdentityPanel({ identity, linkBase = '/history' }) {
       )}
       <p className="mt-3 t-caption faint">Correlations are indicative only and never assert that two records are the same person; the officer decides.</p>
     </Card>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Watchlist screening                                                  */
+/* ------------------------------------------------------------------ */
+export function WatchlistPanel({ watchlist }) {
+  if (!watchlist) return null;
+  const status = watchlist.status;
+  const st = status === 'clear' ? 'pass' : status === 'confirmed_match' || status === 'match' ? 'fail' : status === 'unavailable' ? 'unavailable' : 'warn';
+  const top = watchlist.matches?.[0];
+  return (
+    <Card title="Watchlist screening" subtitle={watchlist.source} icon={ScanSearch} actions={watchlist.synthetic ? <Badge tone="warn" dot>Synthetic list</Badge> : null}>
+      <StatusText status={st} className="font-medium text-[var(--ink)]">{{ clear: 'CLEAR', confirmed_match: 'CONFIRMED MATCH', match: 'CONFIRMED MATCH', possible_match: 'POSSIBLE MATCH — requires officer review', possible: 'POSSIBLE MATCH — requires officer review', unavailable: 'UNAVAILABLE' }[status] || status}</StatusText>
+      <p className="mt-2 t-body-sm muted">{watchlist.explanation}</p>
+      {top && <dl className="mt-3 grid grid-cols-2 gap-2 t-body-sm"><div><dt className="t-caption">Record</dt><dd className="t-code">{top.recordId}</dd></div><div><dt className="t-caption">Match type</dt><dd>{String(top.matchType || '').replace('_', ' ')}</dd></div><div><dt className="t-caption">Match confidence</dt><dd className="tabular">{Math.round((top.confidence || 0) * 100)}%</dd></div><div><dt className="t-caption">Fields used</dt><dd>{(watchlist.fieldsUsed || []).join(', ') || '—'}</dd></div></dl>}
+      {watchlist.synthetic && <p className="mt-3 t-caption faint">Synthetic demonstration list — not a government, police or immigration database.</p>}
+    </Card>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Workflow strip: the SIH module chain with each module's outcome      */
+/* ------------------------------------------------------------------ */
+const CHAIN = [
+  { id: 'ocr', module: '01', label: 'OCR extraction', match: (e) => e.source === 'ocr' },
+  { id: 'validation', module: '02', label: 'Document validation', match: (e) => e.source === 'validation' && e.category !== 'barcode' },
+  { id: 'tampering', module: '03', label: 'Tampering detection', match: (e) => e.source === 'tampering' },
+  { id: 'face', module: '04', label: 'Face verification', match: (e) => e.source === 'face' },
+  { id: 'watchlist', label: 'Watchlist', match: (e) => e.source === 'watchlist' },
+  { id: 'fusion', label: 'Evidence fusion', match: null },
+];
+
+const CHAIN_TONE = { pass: 'status-ok', warn: 'status-warn', fail: 'status-danger', unavailable: 'status-neutral', not_applicable: 'faint', info: 'status-neutral' };
+const CHAIN_LABEL = { pass: 'PASS', warn: 'WARNING', fail: 'FAIL', unavailable: 'UNAVAILABLE', not_applicable: 'N/A', info: 'INFO' };
+
+/** Worst status among a module's evidence; `not_applicable` and `unavailable` are never failures. */
+export function moduleStatus(fusion, match) {
+  const items = (fusion?.evidence || []).filter(match);
+  if (!items.length) return 'unavailable';
+  if (items.some((e) => e.id === 'face:not_applicable')) return 'not_applicable';
+  const usable = items.filter((e) => e.status !== 'unavailable');
+  if (!usable.length) return 'unavailable';
+  if (usable.some((e) => e.status === 'fail')) return 'fail';
+  if (usable.some((e) => e.status === 'warn')) return 'warn';
+  return 'pass';
+}
+
+export function WorkflowStrip({ fusion, correlations = 0 }) {
+  if (!fusion) return null;
+  return (
+    <section className="card p-4 sm:p-5" aria-labelledby="workflow-heading">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p id="workflow-heading" className="t-label">Screening workflow</p>
+        <p className="t-caption muted">{correlations > 0 ? `${correlations} correlated signal${correlations === 1 ? '' : 's'} between modules` : 'No cross-module correlations'}</p>
+      </div>
+      <ol className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6" aria-label="Module chain">
+        {CHAIN.map((c) => {
+          const status = c.id === 'fusion' ? 'pass' : moduleStatus(fusion, c.match);
+          return (
+            <li key={c.id} className="rounded-sm hairline px-3 py-2">
+              {c.module && <p className="t-code tabular faint">MODULE {c.module}</p>}
+              <p className="t-body-sm font-medium leading-tight">{c.label}</p>
+              <p className={cx('mt-1 t-caption tabular font-medium', CHAIN_TONE[status])}>{c.id === 'fusion' ? 'COMPLETE' : CHAIN_LABEL[status]}</p>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
+/** Section heading that numbers the four mandatory SIH modules on the results page. */
+export function ModuleHeading({ module, title, note }) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b divider pb-2">
+      {module && <span className="t-code tabular faint">MODULE {module}</span>}
+      <h2 className="t-h3">{title}</h2>
+      {note && <span className="t-caption muted">{note}</span>}
+    </div>
   );
 }

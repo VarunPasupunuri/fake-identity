@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { Printer, Copy, Download, Clock, User, MapPin, FileText, ScanSearch } from 'lucide-react';
+import { Printer, Copy, Download, Clock, User, MapPin, FileText } from 'lucide-react';
 import { getScreening, recordDecision } from '../services/screenings.js';
 import ResultsView from '../components/screening/ResultsView.jsx';
 import DecisionBar from '../components/screening/DecisionBar.jsx';
-import { DecisionBadge, AiDecisionBadge, Spinner, EmptyState, PageHeader, Badge, Card, StatusText } from '../components/ui/index.jsx';
+import { DecisionBadge, AiDecisionBadge, Spinner, EmptyState, PageHeader, Badge, Card } from '../components/ui/index.jsx';
 import { DOCUMENT_TYPE_LABEL } from '../modules/types.js';
 import { formatDateTime, caseId } from '../lib/format.js';
 import { useToast } from '../context/ToastContext.jsx';
@@ -17,20 +17,7 @@ function auditJson(row) {
   return { ...row, documentImageUrl: row.documentImageUrl ? '[inline image]' : null, liveImageUrl: row.liveImageUrl ? '[inline image]' : null, tampering: row.tampering && { ...row.tampering, evidence: { ...row.tampering.evidence, elaImage: row.tampering.evidence?.elaImage ? '[image]' : null } } };
 }
 
-export function WatchlistPanel({ watchlist }) {
-  if (!watchlist) return null;
-  const status = watchlist.status;
-  const st = status === 'clear' ? 'pass' : status === 'confirmed_match' || status === 'match' ? 'fail' : status === 'unavailable' ? 'unavailable' : 'warn';
-  const top = watchlist.matches?.[0];
-  return (
-    <Card title="Watchlist result" subtitle={watchlist.source} icon={ScanSearch}>
-      <StatusText status={st} className="font-medium text-[var(--ink)]">{{ clear: 'No match', confirmed_match: 'Confirmed match', match: 'Confirmed match', possible_match: 'Possible match — requires officer review', possible: 'Possible match — requires officer review', unavailable: 'Check unavailable' }[status] || status}</StatusText>
-      <p className="mt-2 t-body-sm muted">{watchlist.explanation}</p>
-      {top && <dl className="mt-3 grid grid-cols-2 gap-2 t-body-sm"><div><dt className="t-caption">Record</dt><dd className="t-code">{top.recordId}</dd></div><div><dt className="t-caption">Match type</dt><dd>{String(top.matchType || '').replace('_', ' ')}</dd></div><div><dt className="t-caption">Confidence</dt><dd className="tabular">{Math.round((top.confidence || 0) * 100)}%</dd></div><div><dt className="t-caption">Fields used</dt><dd>{(watchlist.fieldsUsed || []).join(', ') || '—'}</dd></div></dl>}
-      {watchlist.synthetic && <p className="mt-3 t-caption">Synthetic demonstration list — not a government database.</p>}
-    </Card>
-  );
-}
+export { WatchlistPanel } from '../components/screening/UniversalPanels.jsx';
 
 export default function ScreeningDetailPage({ investigation = false }) {
   const { id } = useParams();
@@ -78,7 +65,7 @@ export default function ScreeningDetailPage({ investigation = false }) {
         <div><p className="t-label">Officer decision</p><p className="mt-0.5 flex flex-wrap items-center gap-2"><DecisionBadge decision={row.decision} />{row.decidedAt && <span className="t-caption">{formatDateTime(row.decidedAt)}</span>}</p></div>
       </section>
 
-      <ResultsView results={row} images={images} mode={investigation ? 'investigation' : 'review'} linkBase={investigation ? '/investigations' : '/history'}>
+      <ResultsView results={row} images={images} mode={investigation ? 'investigation' : 'review'} linkBase={investigation ? '/investigations' : '/history'} caseRef={caseId(row)}>
         {canDecide ? <DecisionBar recommendation={row.risk?.recommendation} aiDecision={row.aiDecision || row.fusion?.decision} onDecide={decide} sticky={false} /> : (
           <div className="rounded-md hairline p-3 text-sm">
             <p className="t-label">Officer decision</p>
@@ -90,7 +77,6 @@ export default function ScreeningDetailPage({ investigation = false }) {
       </ResultsView>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <WatchlistPanel watchlist={row.watchlist} />
         <Card title="Verification timeline" icon={Clock}>
           <ol className="space-y-4 border-l divider pl-4">
             {timeline.map((e, i) => <li key={i} className="relative"><span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full bg-[var(--brand)] ring-4 ring-[var(--surface)]" aria-hidden="true" /><p className="text-sm font-medium">{e.label}</p>{e.body && <p className="t-body-sm muted">{e.body}</p>}<p className="t-caption">{formatDateTime(e.t)}</p></li>)}

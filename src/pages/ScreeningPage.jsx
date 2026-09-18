@@ -14,8 +14,9 @@ import DecisionBar from '../components/screening/DecisionBar.jsx';
 import { PageHeader } from '../components/ui/index.jsx';
 import { resolveProviders } from '../modules/registry.js';
 import { resolveSelection, getProfile, AUTO_DETECT } from '../modules/documents/registry.js';
-import { DEMO_DOCUMENTS, SCENARIO_OPTIONS } from '../modules/documents/fixtures.js';
-import { cx } from '../lib/format.js';
+import { DEMO_DOCUMENTS } from '../modules/documents/fixtures.js';
+import { SCENARIO_OPTIONS, scenarioProfile } from '../modules/documents/scenarios.js';
+import { cx, caseId } from '../lib/format.js';
 
 const STEPS = [
   { label: 'Document', icon: FileImage },
@@ -35,7 +36,7 @@ export default function ScreeningPage() {
   const [docImage, setDocImage] = useState(null);
   const [liveImage, setLiveImage] = useState(null);
   const [useMock, setUseMock] = useState(false);
-  const [scenario, setScenario] = useState('clean');
+  const [scenario, setScenario] = useState('clean_passport');
   const [mockDocument, setMockDocument] = useState('passport');
   const [history, setHistory] = useState([]);
   const [screeningId, setScreeningId] = useState(null);
@@ -96,10 +97,21 @@ export default function ScreeningPage() {
           <div className="flex flex-wrap items-center gap-2 t-body-sm">
             <label className="flex min-h-9 cursor-pointer items-center gap-2 rounded-md hairline px-3"><input type="checkbox" checked={useMock} onChange={(e) => setUseMock(e.target.checked)} className="h-4 w-4 accent-[var(--brand)]" /><FlaskConical className="h-4 w-4 faint" aria-hidden="true" />Demonstration data</label>
             {useMock && <select className="input input-sm w-auto" aria-label="Demonstration document" value={mockDocument} onChange={(e) => setMockDocument(e.target.value)}>{DEMO_DOCUMENTS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}</select>}
-            {useMock && <select className="input input-sm w-auto" aria-label="Demonstration scenario" value={scenario} onChange={(e) => setScenario(e.target.value)}>{SCENARIO_OPTIONS.map((o) => <option key={o.value} value={o.value}>Scenario: {o.label}</option>)}</select>}
+            {useMock && (
+              <select className="input input-sm w-auto" aria-label="Demonstration scenario" value={scenario} onChange={(e) => setScenario(e.target.value)}>
+                <optgroup label="Border screening cases">{SCENARIO_OPTIONS.filter((o) => o.sih).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</optgroup>
+                <optgroup label="Document quality cases">{SCENARIO_OPTIONS.filter((o) => !o.sih).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</optgroup>
+              </select>
+            )}
             {!useMock && <Link to="/settings" className="btn-ghost btn-sm">Providers <span className="t-code">{providers.ocr} · {providers.tamper} · {providers.face}</span><ExternalLink className="h-3 w-3" aria-hidden="true" /></Link>}
           </div>
         )} />
+
+      {useMock && step < 2 && (
+        <p className="-mt-2 mb-4 t-caption muted">
+          <span className="font-medium text-[var(--ink)]">Demonstration data.</span> {scenarioProfile(scenario).summary} Designed to produce <span className="font-medium text-[var(--ink)]">{scenarioProfile(scenario).expected}</span>; the assessment is still derived from the evidence.
+        </p>
+      )}
 
       <Stepper step={step} />
 
@@ -110,7 +122,7 @@ export default function ScreeningPage() {
         {step === 3 && pipeline.results && (
           <div className="animate-fade-in space-y-5">
             {saveError && <div className="alert alert-danger">{saveError}</div>}
-            <ResultsView results={pipeline.results} images={{ document: docImage?.dataUrl, live: liveImage?.dataUrl }} linkBase="/history">
+            <ResultsView results={pipeline.results} images={{ document: docImage?.dataUrl, live: liveImage?.dataUrl }} linkBase="/history" caseRef={screeningId ? caseId({ id: screeningId, createdAt: new Date().toISOString() }) : 'Saving case…'}>
               {decided ? (
                 <div className="flex items-center gap-2 rounded-md hairline px-3 py-3 text-sm font-medium status-ok"><Check className="h-4 w-4" aria-hidden="true" />Decision recorded — opening case…</div>
               ) : (

@@ -33,7 +33,7 @@ function Points({ value, suffix }) {
 /* ------------------------------------------------------------------ */
 /* 1 + 2 + 8: system assessment, risk vs confidence, insufficient state */
 /* ------------------------------------------------------------------ */
-export function DecisionPanel({ fusion, documentType, ocr, classification, children }) {
+export function DecisionPanel({ fusion, documentType, ocr, classification, caseRef, children }) {
   const ui = DECISION_UI[fusion.decision] || DECISION_UI[DECISION.INSUFFICIENT];
   const t = TONE[ui.tone];
   const Icon = t.icon;
@@ -54,7 +54,10 @@ export function DecisionPanel({ fusion, documentType, ocr, classification, child
     <section className="card overflow-hidden animate-slide-up" aria-labelledby="system-assessment-heading">
       <div className={cx('grid gap-6 p-4 sm:p-6', children ? 'lg:grid-cols-[minmax(0,1fr)_18rem]' : 'lg:grid-cols-1')}>
         <div className="min-w-0">
-          <p className="t-label">Document assessment</p>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <p className="t-label">Document assessment</p>
+            {caseRef && <p className="t-code tabular faint">{caseRef}</p>}
+          </div>
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <Icon className={cx('h-7 w-7 shrink-0', t.text)} aria-hidden="true" />
             <h2 id="system-assessment-heading" className="t-display">{ui.label}</h2>

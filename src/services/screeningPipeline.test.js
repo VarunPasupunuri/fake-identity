@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { runScreening, STEP_IDS, initialSteps } from './screeningPipeline.js';
+import { runScreening, STEP_IDS, STEP_META, SIH_MODULES, initialSteps } from './screeningPipeline.js';
 import { modules } from '../modules/registry.js';
 import { DECISION } from '../modules/fusion/index.js';
 
@@ -107,7 +107,7 @@ describe('screening pipeline → evidence fusion integration', () => {
     const rec = recorder();
     await runScreening({ documentType: 'visa', documentImage: IMG, liveImage: IMG, options: { ...MOCK } }, { onUpdate: rec.onUpdate, log: () => {} });
     const riskMsgs = rec.events.filter((e) => e.id === 'risk').map((e) => e.message);
-    expect(riskMsgs).toEqual(expect.arrayContaining(['Starting', 'Normalising evidence', 'Correlating verification evidence', 'Calculating risk assessment', 'Complete']));
+    expect(riskMsgs).toEqual(expect.arrayContaining(['Starting', 'Normalising evidence', 'Correlating verification evidence', 'Calculating risk and confidence', 'Complete']));
     // Face is skipped for a document without a live photo; every other stage reports progress.
     for (const id of STEP_IDS.filter((x) => x !== 'face')) expect(rec.events.some((e) => e.id === id && e.status === 'running')).toBe(true);
   });
@@ -245,5 +245,76 @@ describe('universal document screening (workflows A–E)', () => {
     expect(rec.steps.face.status).toBe('skipped');
     expect(rec.steps.barcode.status).toBe('done');
     expect(rec.steps.classification.status).toBe('done');
+  });
+});
+
+describe('SIH demonstration scenarios (synthetic, deterministic)', () => {
+  const run = (scenario, live = true) => runScreening(
+    { documentType: 'passport', documentImage: IMG, liveImage: live ? IMG : null, options: { useMock: true, scenario } },
+    { log: () => {} },
+  );
+
+  it('CLEAN PASSPORT: every module passes and the assessment is APPROVE', async () => {
+    const out = await run('clean_passport');
+    expect(out.validation.failed).toBe(0);
+    expect(out.tampering.flags).toEqual([]);
+    expect(out.face).toMatchObject({ match: true, documentFaceFound: true, liveFaceFound: true });
+    expect(out.watchlist.status).toBe('clear');
+    expect(out.fusion.risk.level).toBe('low');
+    expect(out.fusion.decision).toBe(DECISION.APPROVE);
+  });
+
+  it('TAMPERED DOB: the printed date disagrees with the MRZ and forensics flag that region', async () => {
+    const out = await run('tampered_dob');
+    const check = out.validation.checks.find((c) => c.id === 'mrz_viz_dateOfBirth');
+    expect(check.status).toBe('fail');
+    const flag = out.tampering.flags.find((f) => f.field === 'dateOfBirth');
+    expect(flag).toBeTruthy();
+    // The two independent findings must correlate — that is the point of the case.
+    expect(out.fusion.correlations.map((c) => c.id)).toContain('corr:mrz_field_tamper:dateOfBirth');
+    expect(out.fusion.decision).toBe(DECISION.REVIEW);
+    expect(out.fusion.rationale).toMatch(/date of birth/i);
+  });
+
+  it('ALTERED PHOTOGRAPH: photo-region anomaly plus a face mismatch reaches REJECT', async () => {
+    const out = await run('photo_substitution');
+    expect(out.tampering.flags.some((f) => f.type === 'photo_replacement')).toBe(true);
+    expect(out.face.match).toBe(false);
+    expect(out.fusion.correlations.map((c) => c.id)).toContain('corr:photo_face');
+    expect(out.fusion.decision).toBe(DECISION.REJECT);
+    expect(out.fusion.gates).toEqual(expect.arrayContaining(['biometric_mismatch']));
+  });
+
+  it('EXPIRED + WATCHLIST: an expired document matching the synthetic list reaches REJECT', async () => {
+    const out = await run('expired_watchlist');
+    expect(out.validation.checks.find((c) => c.id === 'expiry_not_passed').status).toBe('fail');
+    expect(out.watchlist.status).toBe('confirmed_match');
+    expect(out.watchlist.synthetic).toBe(true);
+    expect(out.fusion.decision).toBe(DECISION.REJECT);
+    expect(out.fusion.gates).toEqual(expect.arrayContaining(['critical_evidence']));
+  });
+
+  it('INSUFFICIENT EVIDENCE: unusable extraction never becomes a fraud finding', async () => {
+    const out = await run('insufficient_evidence');
+    expect(Object.keys(out.ocr.fields)).toHaveLength(0);
+    expect(out.fusion.confidence.score).toBeLessThan(50);
+    expect(out.fusion.decision).toBe(DECISION.INSUFFICIENT);
+    // Nothing that merely failed to run may be recorded as a failing finding.
+    expect(out.fusion.evidence.filter((e) => e.status === 'fail')).toEqual([]);
+    expect(out.face.documentFaceFound).toBe(false);
+  });
+
+  it('every scenario keeps risk and confidence as separate values', async () => {
+    for (const sc of ['clean_passport', 'tampered_dob', 'photo_substitution', 'expired_watchlist', 'insufficient_evidence']) {
+      const out = await run(sc);
+      expect(typeof out.fusion.risk.score).toBe('number');
+      expect(typeof out.fusion.confidence.score).toBe('number');
+      expect(out.fusion.confidence.usesMockProviders).toBe(true);
+    }
+  }, 30000); // five full screenings, each with the mock providers' simulated stage delays
+
+  it('exposes the four mandatory SIH modules with their pipeline stages', () => {
+    expect(SIH_MODULES.map((m) => `${m.module}:${m.step}`)).toEqual(['01:ocr', '02:validation', '03:tampering', '04:face']);
+    for (const m of SIH_MODULES) expect(STEP_META[m.step].module).toBe(m.module);
   });
 });

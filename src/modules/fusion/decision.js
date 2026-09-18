@@ -157,7 +157,7 @@ export function counterfactual({ decision, reasons, evidence, correlations, conf
     return {
       current: decision,
       reasons: [],
-      resolution: decision === DECISION.VERIFIED ? 'The document is confirmed by an issuer record and nothing contradicts it. Any failing validation rule, tampering signal, biometric mismatch or watchlist hit would move this to REVIEW REQUIRED or SUSPICIOUS.' : 'No contradictory evidence was found. Any failing validation rule, tampering signal, biometric mismatch or watchlist hit would move this to REVIEW REQUIRED or SUSPICIOUS.',
+      resolution: decision === DECISION.VERIFIED ? 'The document is confirmed by an issuer record and nothing contradicts it. Any failing validation rule, tampering signal, biometric mismatch or watchlist hit would move this to REVIEW REQUIRED or REJECT.' : 'No contradictory evidence was found. Any failing validation rule, tampering signal, biometric mismatch or watchlist hit would move this to REVIEW REQUIRED or REJECT.',
       potentialDecision: null,
       requires: [],
     };

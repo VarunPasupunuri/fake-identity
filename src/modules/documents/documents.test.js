@@ -429,7 +429,11 @@ describe('synthetic fixtures', () => {
     expect(civil).toMatch(/DEMO/);
   });
 
-  it('offer a scenario for every documented failure mode', () => {
-    expect(SCENARIO_OPTIONS.map((s) => s.value)).toEqual(['clean', 'suspicious', 'missing_fields', 'inconsistent_dates', 'poor_ocr', 'unreadable_qr', 'unknown']);
+  it('offer the five SIH border-screening cases plus the document-quality cases', () => {
+    const sih = SCENARIO_OPTIONS.filter((s) => s.sih).map((s) => s.value);
+    expect(sih).toEqual(['clean_passport', 'tampered_dob', 'photo_substitution', 'expired_watchlist', 'insufficient_evidence']);
+    const quality = SCENARIO_OPTIONS.filter((s) => !s.sih).map((s) => s.value);
+    expect(quality).toEqual(['clean', 'suspicious', 'missing_fields', 'inconsistent_dates', 'poor_ocr', 'unreadable_qr', 'unknown']);
+    for (const s of SCENARIO_OPTIONS) expect(typeof s.summary).toBe('string');
   });
 });

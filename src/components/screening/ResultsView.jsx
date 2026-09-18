@@ -7,7 +7,7 @@ import { getProfile, expectedFieldKeys } from '../../modules/documents/registry.
 import { DATE_FIELD_KEYS, IDENTIFIER_FIELD_KEYS } from '../../modules/documents/fields.js';
 import { formatDate, cx, RISK_STYLES } from '../../lib/format.js';
 import { DecisionPanel, WhyPanel, EvidenceFusionPanel, CorrelationsPanel, EvidenceChainPanel, CounterfactualPanel } from './FusionPanels.jsx';
-import { SignalsPanel, EvidenceGroupsPanel, LimitationsPanel, BarcodePanel, IdentityPanel } from './UniversalPanels.jsx';
+import { SignalsPanel, EvidenceGroupsPanel, LimitationsPanel, BarcodePanel, IdentityPanel, WatchlistPanel, WorkflowStrip, ModuleHeading } from './UniversalPanels.jsx';
 
 const DATE_FIELDS = new Set(DATE_FIELD_KEYS);
 const ID_FIELDS = new Set([...IDENTIFIER_FIELD_KEYS, 'documentNumber', 'visaNumber']);
@@ -23,51 +23,114 @@ const HIDDEN_FIELDS = new Set(['marks', 'subjects']); // rendered as a table, no
  * `images`  = { document, live }
  * `mode`    is accepted for callers that render the same view in a different context (e.g. investigation) and is currently informational only.
  */
-export default function ResultsView({ results, images, children, linkBase = '/history' }) {
-  const { documentType, ocr, validation, tampering, barcode, face, identity, risk, fusion, providers, classification } = results;
+export default function ResultsView({ results, images, children, linkBase = '/history', caseRef }) {
+  const { documentType, ocr, validation, tampering, barcode, face, watchlist, identity, risk, fusion, providers, classification } = results;
   const profile = getProfile(documentType);
   const faceApplies = profile.face !== 'not_applicable';
   const [tab, setTab] = useState('all');
   const tabs = [
     { value: 'all', label: 'Overview', icon: LayoutGrid },
-    { value: 'data', label: 'Data', icon: FileText, count: Object.keys(ocr?.fields || {}).length },
-    { value: 'checks', label: 'Checks', icon: ListChecks, count: validation?.failed || 0 },
-    { value: 'tamper', label: 'Integrity', icon: ShieldAlert, count: tampering?.flags?.length || 0 },
-    ...(barcode ? [{ value: 'codes', label: 'Codes', icon: QrCode, count: barcode.codes?.length || 0 }] : []),
-    ...(faceApplies || face ? [{ value: 'face', label: 'Face', icon: ScanFace }] : []),
+    { value: 'data', label: '01 Data', icon: FileText, count: Object.keys(ocr?.fields || {}).length },
+    { value: 'checks', label: '02 Checks', icon: ListChecks, count: validation?.failed || 0 },
+    { value: 'tamper', label: '03 Integrity', icon: ShieldAlert, count: tampering?.flags?.length || 0 },
+    ...(faceApplies || face ? [{ value: 'face', label: '04 Face', icon: ScanFace }] : []),
+    ...(barcode || watchlist ? [{ value: 'other', label: 'Other', icon: QrCode, count: barcode?.codes?.length || 0 }] : []),
   ];
   const show = (k) => tab === 'all' || tab === k;
+  const overview = tab === 'all';
   const hasFusion = Boolean(fusion && fusion.decision);
+  if (!hasFusion) {
+    // Records created before evidence fusion: legacy risk panel plus the module panels we can still render.
+    return (
+      <div className="space-y-5">
+        <RiskPanel risk={risk} documentType={documentType} ocr={ocr} face={face} tampering={tampering}>{children}</RiskPanel>
+        <Tabs tabs={tabs} value={tab} onChange={setTab} className="lg:hidden" />
+        <div className="grid gap-5 lg:grid-cols-2">
+          {show('data') && <ExtractedDataPanel ocr={ocr} validation={validation} provider={providers?.ocr} documentType={documentType} />}
+          {show('checks') && <ValidationPanel validation={validation} />}
+          {show('tamper') && <TamperingPanel tampering={tampering} image={images?.document} provider={providers?.tamper} />}
+          {show('face') && (faceApplies || face) && <FacePanel face={face} images={images} provider={providers?.face} applicability={profile.face} />}
+        </div>
+      </div>
+    );
+  }
   return (
-    <div className="space-y-5">
-      {hasFusion
-        ? <DecisionPanel fusion={fusion} documentType={documentType} ocr={ocr} classification={classification}>{children}</DecisionPanel>
-        : <RiskPanel risk={risk} documentType={documentType} ocr={ocr} face={face} tampering={tampering}>{children}</RiskPanel>}
-      {hasFusion && tab === 'all' && (
+    <div className="space-y-6">
+      {/* Assessment, risk, confidence and the officer's decision */}
+      <DecisionPanel fusion={fusion} documentType={documentType} ocr={ocr} classification={classification} caseRef={caseRef}>{children}</DecisionPanel>
+
+      {/* The module chain, so the workflow is visible at a glance */}
+      {overview && <WorkflowStrip fusion={fusion} correlations={(fusion.correlations || []).filter((c) => c.kind !== 'supporting').length} />}
+
+      {overview && (
         <div className="grid gap-5 lg:grid-cols-2">
           <SignalsPanel fusion={fusion} />
           <WhyPanel fusion={fusion} />
         </div>
       )}
-      {hasFusion && tab === 'all' && <EvidenceGroupsPanel fusion={fusion} />}
-      {hasFusion && tab === 'all' && <CorrelationsPanel fusion={fusion} />}
+
       <Tabs tabs={tabs} value={tab} onChange={setTab} className="lg:hidden" />
-      <div className="grid gap-5 lg:grid-cols-2">
-        {show('data') && <ExtractedDataPanel ocr={ocr} validation={validation} provider={providers?.ocr} documentType={documentType} />}
-        {show('checks') && <ValidationPanel validation={validation} />}
-        {show('tamper') && <TamperingPanel tampering={tampering} image={images?.document} provider={providers?.tamper} />}
-        {show('codes') && barcode && <BarcodePanel barcode={barcode} validation={validation} image={images?.document} />}
-        {show('face') && (faceApplies || face) && <FacePanel face={face} images={images} provider={providers?.face} applicability={profile.face} />}
-        {tab === 'all' && identity && <IdentityPanel identity={identity} linkBase={linkBase} />}
-        {hasFusion && tab === 'all' && <EvidenceFusionPanel fusion={fusion} />}
-      </div>
-      {hasFusion && tab === 'all' && (
-        <div className="grid gap-5 lg:grid-cols-2">
-          <EvidenceChainPanel fusion={fusion} />
-          <CounterfactualPanel fusion={fusion} />
-        </div>
+
+      {/* MODULE 01 — OCR EXTRACTION */}
+      {show('data') && (
+        <section className="space-y-3" aria-label="Module 01 OCR extraction">
+          <ModuleHeading module="01" title="OCR extraction" note={ocr ? `${providers?.ocr || ocr.provider} · ${Math.round((ocr.confidence || 0) * 100)}% read confidence` : 'no output'} />
+          <ExtractedDataPanel ocr={ocr} validation={validation} provider={providers?.ocr} documentType={documentType} />
+        </section>
       )}
-      {hasFusion && tab === 'all' && <LimitationsPanel fusion={fusion} results={results} />}
+
+      {/* MODULE 02 — DOCUMENT VALIDATION */}
+      {show('checks') && (
+        <section className="space-y-3" aria-label="Module 02 document validation">
+          <ModuleHeading module="02" title="Document validation" note={validation ? `${validation.passed} passed · ${validation.failed} failed · ${validation.warnings} warnings` : 'did not run'} />
+          <ValidationPanel validation={validation} />
+        </section>
+      )}
+
+      {/* MODULE 03 — TAMPERING DETECTION */}
+      {show('tamper') && (
+        <section className="space-y-3" aria-label="Module 03 tampering detection">
+          <ModuleHeading module="03" title="Tampering detection" note={tampering ? `${providers?.tamper || tampering.provider} · image forensics` : 'unavailable'} />
+          <TamperingPanel tampering={tampering} image={images?.document} provider={providers?.tamper} />
+        </section>
+      )}
+
+      {/* MODULE 04 — FACE VERIFICATION */}
+      {show('face') && (faceApplies || face) && (
+        <section className="space-y-3" aria-label="Module 04 face verification">
+          <ModuleHeading module="04" title="Face verification" note={faceApplies ? (providers?.face || face?.provider || 'not performed') : 'not applicable to this document type'} />
+          <FacePanel face={face} images={images} provider={providers?.face} applicability={profile.face} />
+        </section>
+      )}
+
+      {/* Supporting checks */}
+      {(show('other') || overview) && (watchlist || barcode || identity) && (
+        <section className="space-y-3" aria-label="Supporting checks">
+          <ModuleHeading title="Watchlist, codes and identity signals" note="supporting checks" />
+          <div className="grid gap-5 lg:grid-cols-2">
+            {watchlist && <WatchlistPanel watchlist={watchlist} />}
+            {barcode && <BarcodePanel barcode={barcode} validation={validation} image={images?.document} />}
+            {identity && <IdentityPanel identity={identity} linkBase={linkBase} />}
+          </div>
+        </section>
+      )}
+
+      {/* Evidence fusion */}
+      {overview && (
+        <section className="space-y-3" aria-label="Evidence fusion">
+          <ModuleHeading title="Evidence fusion" note="how the modules combine into one assessment" />
+          <EvidenceGroupsPanel fusion={fusion} />
+          <CorrelationsPanel fusion={fusion} />
+          <div className="grid gap-5 lg:grid-cols-2">
+            <EvidenceFusionPanel fusion={fusion} />
+            <EvidenceChainPanel fusion={fusion} />
+          </div>
+          <div className="grid gap-5 lg:grid-cols-2">
+            <CounterfactualPanel fusion={fusion} />
+            <LimitationsPanel fusion={fusion} results={results} />
+          </div>
+        </section>
+      )}
     </div>
   );
 }

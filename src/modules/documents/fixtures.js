@@ -16,6 +16,8 @@
  *   unreadable_qr       QR present but not decodable
  *   unknown             text with no recognisable document type
  */
+import { scenarioProfile } from './scenarios.js';
+
 export const SYNTHETIC = true;
 export const SCENARIOS = Object.freeze(['clean', 'suspicious', 'missing_fields', 'inconsistent_dates', 'poor_ocr', 'unreadable_qr', 'unknown']);
 
@@ -93,14 +95,16 @@ const FIXTURES = {
 
 /** Synthetic recognised text for a document type + scenario. Unknown types fall back to the generic fixture. */
 export function fixtureText(documentType, scenario = 'clean') {
-  if (scenario === 'unknown') return FIXTURES.unknown();
+  const sc = scenarioProfile(scenario).ocr;
+  if (sc === 'unknown') return FIXTURES.unknown();
   const fn = FIXTURES[documentType] || FIXTURES.generic_document;
-  const text = fn(scenario);
-  return scenario === 'poor_ocr' ? garble(text) : text;
+  const text = fn(sc);
+  return sc === 'poor_ocr' ? garble(text) : text;
 }
 
 /** Synthetic decoded QR content for a document type + scenario (undefined when the type carries no code). */
 export function fixtureBarcode(documentType, scenario = 'clean') {
+  const sc = scenarioProfile(scenario).ocr;
   const codes = {
     birth_certificate: { registrationNumber: 'BR-DEMO-2016-00417', name: 'AARAV DEMO KUMAR', dob: '2016-05-20' },
     death_certificate: { registrationNumber: 'DR-DEMO-2024-01932', name: 'MOHAN DEMO VERMA', dod: '2024-11-02' },
@@ -115,9 +119,9 @@ export function fixtureBarcode(documentType, scenario = 'clean') {
   };
   if (scenario === 'unreadable_qr') return { status: 'unreadable', codes: [], explanation: 'A code-like region was found but could not be decoded (synthetic scenario).' };
   const c = codes[documentType];
-  if (!c || scenario === 'unknown' || scenario === 'missing_fields') return { status: 'not_found', codes: [], explanation: 'No QR code or barcode was detected on the document image (synthetic scenario).' };
+  if (!c || sc === 'unknown' || sc === 'missing_fields' || sc === 'unreadable') return { status: 'not_found', codes: [], explanation: 'No QR code or barcode was detected on the document image (synthetic scenario).' };
   const raw = typeof c === 'string' ? c : JSON.stringify(c);
-  // Suspicious: the printed identifier was altered, so the code (which still carries the original) no longer agrees.
+  // Altered document: the printed identifier was changed, so the code (which still carries the original) no longer agrees.
   return { status: 'detected', codes: [{ format: 'qr_code', rawValue: raw, region: { x: 0.78, y: 0.06, w: 0.16, h: 0.16 } }], explanation: 'QR code decoded (synthetic scenario).' };
 }
 
@@ -140,12 +144,4 @@ export const DEMO_DOCUMENTS = Object.freeze([
   { value: 'generic_document', label: 'Unrecognised official document' },
 ]);
 
-export const SCENARIO_OPTIONS = Object.freeze([
-  { value: 'clean', label: 'Genuine document' },
-  { value: 'suspicious', label: 'Altered document' },
-  { value: 'missing_fields', label: 'Missing required fields' },
-  { value: 'inconsistent_dates', label: 'Inconsistent dates' },
-  { value: 'poor_ocr', label: 'Poor OCR quality' },
-  { value: 'unreadable_qr', label: 'Unreadable QR code' },
-  { value: 'unknown', label: 'Unknown document type' },
-]);
+export { SCENARIO_OPTIONS, SCENARIO_PROFILES, SIH_SCENARIOS, scenarioProfile } from './scenarios.js';

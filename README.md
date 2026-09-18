@@ -4,15 +4,28 @@ Smart India Hackathon **PS 26188** · Ministry of Home Affairs · Sashastra Seem
 
 A responsive web app for verification officers: scan or upload **any official document** — from a birth certificate to a death certificate, passports, visas, national IDs, driving licences, voter IDs, academic marks memos, degree certificates, transcripts, employment and salary certificates, government certificates and licences, or an unrecognised official document — and get back the detected document type, extracted fields, document-specific validation, image-forensics evidence, QR/barcode analysis, a face comparison where a holder photograph applies, watchlist screening, identity correlation with prior cases, and a fused **risk score + analysis confidence** behind one of five assessments. Every screening is stored as an immutable audit record.
 
+### The four mandatory modules (SIH PS 26188)
+
+| Module | Implementation | Where to see it |
+|---|---|---|
+| **01 OCR extraction** | Tesseract.js on device (or Cloud Vision), ICAO 9303 MRZ parsing, profile-driven field extraction | *Module 01* section of the results page |
+| **02 Document validation** | Required fields, identifier formats, dates, expiry, MRZ check digits, MRZ ↔ printed consistency, document-specific rules | *Module 02* |
+| **03 Tampering detection** | Error Level Analysis grid outliers + EXIF/XMP metadata provenance, with flagged regions drawn on the document | *Module 03* |
+| **04 Face verification** | face-api.js descriptors comparing the live capture with the document photograph | *Module 04* |
+
+Supporting checks (watchlist screening, QR/barcode, identity correlation, issuer verification) and the Evidence Fusion engine sit below them, and the processing screen labels each stage with its module number as it runs.
+
 ### What the assessment means
 
 | Assessment | Meaning |
 |---|---|
-| **Likely authentic** | Document-level evidence is consistent and nothing contradicts it. Not a claim that the issuer recognises the document. |
+| **Approve** | Document-level evidence is consistent and nothing contradicts it. Not a claim that the issuer recognises the document. |
 | **Review required** | Suspicious or incomplete evidence needs officer inspection. |
-| **Suspicious** | Strong evidence of invalidity, alteration or identity mismatch. |
+| **Reject** | Strong evidence of invalidity, alteration or identity mismatch. |
 | **Insufficient evidence** | Required evidence was unavailable, so no defensible automated assessment exists. Never treated as fraud. |
 | **Verified** | Produced **only** when an authorised issuer source actually confirmed the record (see *Issuer verification*). |
+
+The system assessment is always separate from the **officer decision**, which the officer records themselves (Approve / Review / Reject) with a reason. A decision that differs from the system assessment is stored as an override.
 
 Identity Sentinel performs document-level screening using extracted information, structural validation, image forensics, and available verification sources. **Official issuer verification requires an authorised external data source.** The platform never claims access to any government, police, immigration, university or employer database, and never reports a document as "100% original", "government verified" or "officially verified".
 
@@ -37,7 +50,21 @@ cp .env.example .env   # leave the Firebase keys blank for demo mode
 npm run dev            # http://localhost:5173
 ```
 
-**Demo mode** (no Firebase config) gives you two local accounts, `officer@demo.gov` and `admin@demo.gov` (password `demo1234`), and persists screenings in `localStorage`. Real OCR, ELA, QR reading and face comparison still run in the browser. On the *Screen document* page you can toggle **Demonstration data**, pick any of the synthetic documents (passport → birth certificate → marks memo → experience certificate → unrecognised document) and a scenario (*genuine*, *altered*, *missing required fields*, *inconsistent dates*, *poor OCR quality*, *unreadable QR code*, *unknown document type*) to exercise the whole flow instantly. Every fixture is invented demo data (`src/modules/documents/fixtures.js`).
+**Demo mode** (no Firebase config) gives you two local accounts, `officer@demo.gov` and `admin@demo.gov` (password `demo1234`), and persists screenings in `localStorage`. Real OCR, ELA, QR reading and face comparison still run in the browser.
+
+### Demonstration scenarios
+
+Toggle **Demonstration data** on the *Screen document* page and pick a scenario. Each one drives OCR, tampering, face and watchlist together so the case is coherent across all four modules. Everything is synthetic (`src/modules/documents/scenarios.js`, `fixtures.js`, `watchlist/demoWatchlist.js`) and labelled as demonstration data in the UI.
+
+| Scenario | Evidence | Assessment |
+|---|---|---|
+| **Clean passport** | MRZ and printed data agree, no manipulation signal, face matches, watchlist clear | Approve |
+| **Tampered date of birth** | Printed DOB disagrees with the MRZ **and** image forensics flag that same region — the two correlate | Review required |
+| **Altered photograph** | Photo-region manipulation signal **and** a face mismatch | Reject |
+| **Expired + watchlist hit** | Document expired and its identifiers match a synthetic watchlist record | Reject |
+| **Insufficient evidence** | Extraction produces nothing usable and no face can be compared | Insufficient evidence |
+
+A further set of document-quality scenarios (missing required fields, inconsistent dates, poor OCR, unreadable QR, unknown type) exercises the universal document types. The assessment shown is always derived from the evidence, never hard-coded: the scenario table records what the evidence is designed to produce.
 
 ```bash
 npm test               # unit tests

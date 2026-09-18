@@ -34,7 +34,7 @@ describe('ResultsView — four-way system assessment', () => {
     const r = results();
     expect(r.fusion.decision).toBe(DECISION.APPROVE);
     render(<ResultsView results={r} images={IMG} />);
-    expect(screen.getByRole('heading', { name: 'LIKELY AUTHENTIC' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'APPROVE' })).toBeTruthy();
     expect(screen.getByText('Risk score')).toBeTruthy();
     expect(screen.getByText('Analysis confidence')).toBeTruthy();
     expect(screen.getByText(/How suspicious the evidence is/)).toBeTruthy();
@@ -70,7 +70,7 @@ describe('ResultsView — four-way system assessment', () => {
     const r = results({ ocr: mkOcr({ expiryDate: '2024-01-31' }), face: face(35) });
     expect(r.fusion.decision).toBe(DECISION.REJECT);
     render(<ResultsView results={r} images={IMG} />);
-    expect(screen.getByRole('heading', { name: 'SUSPICIOUS' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'REJECT' })).toBeTruthy();
     expect(screen.getByText(/Strong evidence of invalidity, alteration or identity mismatch/)).toBeTruthy();
     expect(screen.queryByText(/Evidence that could not be obtained/)).toBeNull();
   });
@@ -83,7 +83,7 @@ describe('ResultsView — four-way system assessment', () => {
     expect(screen.getByText(/cannot safely determine authenticity/)).toBeTruthy();
     expect(screen.getByText('Evidence that could not be obtained')).toBeTruthy();
     expect(screen.getByText(/Unavailable evidence is never treated as proof of fraud/)).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'SUSPICIOUS' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'REJECT' })).toBeNull();
     expect(screen.getAllByText('UNAVAILABLE').length).toBeGreaterThanOrEqual(4);
   });
 
@@ -117,8 +117,8 @@ describe('ResultsView — four-way system assessment', () => {
     expect(screen.getByText('Per-contribution trace')).toBeTruthy();
     expect(screen.getAllByText(/Detector:/).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: /^Show$/ }));
-    expect(screen.getByText(/could move to LIKELY AUTHENTIC/)).toBeTruthy();
-    expect(screen.getByText(/Verifying "Inconsistent compression in text area" would move the decision to LIKELY AUTHENTIC/)).toBeTruthy();
+    expect(screen.getByText(/could move to APPROVE/)).toBeTruthy();
+    expect(screen.getByText(/Verifying "Inconsistent compression in text area" would move the decision to APPROVE/)).toBeTruthy();
   });
 
   it('legacy records without fusion still render through the legacy risk panel', () => {

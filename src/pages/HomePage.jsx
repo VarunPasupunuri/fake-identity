@@ -39,13 +39,16 @@ export default function HomePage() {
   const highRisk = rows ? rows.filter((r) => r.risk?.level === 'high') : [];
   const timed = rows ? rows.filter((r) => typeof r.processingMs === 'number') : [];
   const avgMs = timed.length ? Math.round(timed.reduce((s, r) => s + r.processingMs, 0) / timed.length) : null;
+  // Review rate: share of screenings an officer flagged or rejected, over those actually decided.
+  const decided = rows ? rows.filter((r) => r.decision) : [];
+  const reviewRate = decided.length ? Math.round((decided.filter((r) => r.decision !== 'accept').length / decided.length) * 100) : null;
   const days = useMemo(() => (rows ? lastNDays(rows, 7) : []), [rows]);
 
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="t-label">Verification operations</p>
+          <p className="t-label">Border checkpoint operations</p>
           <h1 className="t-h1">Checkpoint {settings.checkpoint}</h1>
           <p className="mt-1 t-body-sm muted">{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · {user?.displayName}{isAdmin ? ' · all officers' : ''}</p>
         </div>
@@ -62,7 +65,8 @@ export default function HomePage() {
           <Metric label="Rejected" value={todayCounts.reject} tone={todayCounts.reject ? 'status-danger' : undefined} loading={!rows} />
           <Metric label="Pending review" value={pending.length} hint="no officer decision" tone={pending.length ? 'status-warn' : undefined} loading={!rows} />
           <Metric label="High-risk cases" value={highRisk.length} hint="risk score ≥ 60" tone={highRisk.length ? 'status-danger' : undefined} loading={!rows} />
-          <Metric label="Avg. processing" value={avgMs === null ? '—' : `${(avgMs / 1000).toFixed(1)} s`} hint={timed.length ? `across ${timed.length} timed cases` : 'measured per case'} loading={!rows} />
+          <Metric label="Review rate" value={reviewRate === null ? '—' : `${reviewRate}%`} hint={decided.length ? `of ${decided.length} decided cases` : 'no decided cases yet'} loading={!rows} />
+          <Metric label="Avg. screening time" value={avgMs === null ? '—' : `${(avgMs / 1000).toFixed(1)} s`} hint={timed.length ? `measured across ${timed.length} cases` : 'measured per case'} loading={!rows} />
         </div>
       </section>
 

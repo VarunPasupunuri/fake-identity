@@ -23,18 +23,31 @@ import { getProfile, resolveSelection, LEGACY_TYPES, AUTO_DETECT } from '../modu
 import { parseFields } from '../modules/ocr/parse.js';
 
 export const STEP_IDS = ['ocr', 'classification', 'validation', 'tampering', 'barcode', 'face', 'watchlist', 'identity', 'issuer', 'risk'];
+/**
+ * Stage metadata. `module` carries the SIH problem statement's four mandatory
+ * modules (01 OCR, 02 validation, 03 tampering, 04 face) so the processing screen
+ * and the results page can label them consistently; supporting stages have none.
+ */
 export const STEP_META = {
-  ocr: { label: 'Text recognition', description: 'Recognising printed text and machine readable zones' },
-  classification: { label: 'Document classification', description: 'Classifying document and extracting document information' },
-  validation: { label: 'Document validation', description: 'Checking document consistency' },
-  tampering: { label: 'Integrity analysis', description: 'Analysing document integrity' },
-  barcode: { label: 'QR / barcode analysis', description: 'Reading QR/barcode' },
-  face: { label: 'Face comparison', description: 'Comparing facial features' },
+  ocr: { module: '01', label: 'OCR extraction', description: 'Extracting text, fields and the machine readable zone' },
+  classification: { label: 'Document classification', description: 'Classifying the document and mapping its fields' },
+  validation: { module: '02', label: 'Document validation', description: 'Checking fields, formats, dates and MRZ consistency' },
+  tampering: { module: '03', label: 'Tampering detection', description: 'Analysing the image for alteration and edited metadata' },
+  barcode: { label: 'QR / barcode analysis', description: 'Reading any QR code or barcode and comparing it with the printed data' },
+  face: { module: '04', label: 'Face verification', description: 'Comparing the presented person with the document photograph' },
   watchlist: { label: 'Watchlist screening', description: 'Screening identifiers against the configured list' },
   identity: { label: 'Identity correlation', description: 'Comparing with prior screening records' },
   issuer: { label: 'Issuer verification', description: 'Checking for an authorised issuer source' },
-  risk: { label: 'Risk assessment', description: 'Correlating verification evidence and calculating risk assessment' },
+  risk: { label: 'Evidence fusion', description: 'Correlating module evidence and calculating risk and confidence' },
 };
+
+/** The four mandatory SIH modules, in order, with the pipeline stage that implements each. */
+export const SIH_MODULES = Object.freeze([
+  { module: '01', step: 'ocr', title: 'OCR extraction' },
+  { module: '02', step: 'validation', title: 'Document validation' },
+  { module: '03', step: 'tampering', title: 'Tampering detection' },
+  { module: '04', step: 'face', title: 'Face verification' },
+]);
 
 export const initialSteps = () => Object.fromEntries(STEP_IDS.map((id) => [id, { status: 'pending', progress: 0, message: '', durationMs: null, error: null }]));
 
@@ -150,7 +163,7 @@ export async function runScreening({ documentType = AUTO_DETECT, documentImage, 
     p(0.2, 'Normalising evidence');
     p(0.5, 'Correlating verification evidence');
     const fusion = mods.fusion({ documentType: out.documentType, ocr: out.ocr, validation: out.validation, tampering: out.tampering, face: out.face, barcode: out.barcode, watchlist: out.watchlist, identity: out.identity, issuer: out.issuer, classification: out.classification, providers });
-    p(0.9, 'Calculating risk assessment');
+    p(0.9, 'Calculating risk and confidence');
     return fusion;
   });
   // Legacy view for the existing results UI, history, statistics and CSV (single engine, projected).

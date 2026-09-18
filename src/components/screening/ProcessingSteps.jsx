@@ -1,8 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { STEP_IDS, STEP_META } from '../../hooks/useScreeningPipeline.js';
-import { StatusIcon, ProgressBar } from '../ui/index.jsx';
+import { StatusIcon, ProgressBar, Badge } from '../ui/index.jsx';
 import { cx } from '../../lib/format.js';
 
+/**
+ * Live processing view. Stages that implement one of the four mandatory SIH
+ * modules carry their module number; supporting stages (classification, QR,
+ * watchlist, identity, issuer, fusion) are listed without one. Timings are the
+ * stage's actual measured duration — nothing is simulated.
+ */
 export default function ProcessingSteps({ steps, providers, documentImage }) {
   const [log, setLog] = useState([]);
   const seen = useRef({});
@@ -18,11 +24,15 @@ export default function ProcessingSteps({ steps, providers, documentImage }) {
 
   const done = STEP_IDS.filter((id) => ['done', 'error', 'skipped'].includes(steps[id].status)).length;
   const overall = Math.round((STEP_IDS.reduce((s, id) => s + (steps[id].progress || 0), 0) / (STEP_IDS.length * 100)) * 100);
+  const elapsed = STEP_IDS.reduce((s, id) => s + (steps[id].durationMs || 0), 0);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div>
-        <div className="mb-4 flex items-center justify-between t-body-sm"><p className="font-medium">Running {done}/{STEP_IDS.length} verification stages</p><p className="tabular muted">{overall}%</p></div>
+        <div className="mb-4 flex items-center justify-between t-body-sm">
+          <p className="font-medium">Running {done}/{STEP_IDS.length} verification stages</p>
+          <p className="tabular muted">{overall}%{elapsed ? ` · ${(elapsed / 1000).toFixed(1)} s` : ''}</p>
+        </div>
         <ProgressBar value={overall} />
         <ol className="mt-4 divide-y divider hairline rounded-md">
           {STEP_IDS.map((id) => {
@@ -32,7 +42,13 @@ export default function ProcessingSteps({ steps, providers, documentImage }) {
               <li key={id} className={cx('flex items-start gap-3 px-4 py-3', s.status === 'running' && 'bg-[var(--surface-2)]')}>
                 <StatusIcon status={s.status} className="mt-0.5 h-4.5 w-4.5" />
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-3"><p className="text-sm font-medium">{meta.label}</p><p className="t-caption tabular">{s.status === 'done' && s.durationMs != null ? `${(s.durationMs / 1000).toFixed(1)} s` : s.status === 'running' ? `${s.progress}%` : s.status === 'error' ? 'Failed' : s.status === 'skipped' ? 'Skipped' : 'Queued'}</p></div>
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                    <p className="text-sm font-medium">
+                      {meta.module && <span className="mr-2 t-code tabular faint">MODULE {meta.module}</span>}
+                      {meta.label}
+                    </p>
+                    <p className="t-caption tabular">{s.status === 'done' && s.durationMs != null ? `${(s.durationMs / 1000).toFixed(1)} s` : s.status === 'running' ? `${s.progress}%` : s.status === 'error' ? 'Failed' : s.status === 'skipped' ? 'Skipped' : 'Queued'}</p>
+                  </div>
                   <p className="t-caption">{s.status === 'running' && s.message ? s.message : s.status === 'error' ? s.error : s.status === 'skipped' ? s.message : meta.description}</p>
                   {s.status === 'running' && <ProgressBar value={s.progress} className="mt-2" />}
                 </div>
@@ -46,8 +62,9 @@ export default function ProcessingSteps({ steps, providers, documentImage }) {
         <div>
           <p className="t-label mb-1">Providers</p>
           <dl className="t-body-sm">
-            {[['Extraction', providers?.ocr], ['Integrity', providers?.tamper], ['QR / barcode', providers?.barcode], ['Face', providers?.face], ['Watchlist', providers?.watchlist], ['Issuer', providers?.issuer]].map(([k, v]) => <div key={k} className="flex justify-between py-0.5"><dt className="muted">{k}</dt><dd className="t-code">{v || '—'}</dd></div>)}
+            {[['01 Extraction', providers?.ocr], ['03 Integrity', providers?.tamper], ['04 Face', providers?.face], ['QR / barcode', providers?.barcode], ['Watchlist', providers?.watchlist], ['Issuer', providers?.issuer]].map(([k, v]) => <div key={k} className="flex justify-between py-0.5"><dt className="muted">{k}</dt><dd className="t-code">{v || '—'}</dd></div>)}
           </dl>
+          {providers?.ocr === 'mock' && <p className="mt-2"><Badge tone="warn" dot>Demonstration data</Badge></p>}
         </div>
         <div>
           <p className="t-label mb-1">Activity</p>

@@ -5,9 +5,9 @@
 
 /** Four-way decision vocabulary used by the fusion engine. */
 export const DECISION = Object.freeze({
-  APPROVE: 'approve',              // document-level evidence: LIKELY AUTHENTIC
-  REVIEW: 'review',                // REVIEW REQUIRED
-  REJECT: 'reject',                // SUSPICIOUS
+  APPROVE: 'approve',              // document-level evidence supports the document
+  REVIEW: 'review',                // needs officer inspection
+  REJECT: 'reject',                // strong evidence against the document
   INSUFFICIENT: 'insufficient_evidence',
   VERIFIED: 'verified',            // only when an authorised issuer source confirmed the record
 });
@@ -18,9 +18,9 @@ export const DECISION = Object.freeze({
  * issuer provider actually confirmed the document.
  */
 export const DECISION_LABEL = Object.freeze({
-  approve: 'Likely authentic',
+  approve: 'Approve',
   review: 'Review required',
-  reject: 'Suspicious',
+  reject: 'Reject',
   insufficient_evidence: 'Insufficient evidence',
   verified: 'Verified',
 });
