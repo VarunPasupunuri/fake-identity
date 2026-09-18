@@ -116,11 +116,28 @@ export function normaliseMrzLine(line) {
  */
 export function realignTd3Line2(l2, issuingCountry) {
   if (!l2 || !/^[A-Z]{3}$/.test(issuingCountry || '')) return l2;
-  if (l2.slice(10, 13) === issuingCountry) return l2;
-  const at = l2.indexOf(issuingCountry);
-  // Only near where it belongs: a country code found elsewhere is a coincidence.
-  if (at < 0 || Math.abs(at - 10) > 4) return l2;
-  return at < 10 ? '<'.repeat(10 - at) + l2 : l2.slice(at - 10);
+  if (looksLikeTd3Line2(l2, issuingCountry)) return l2;
+  // Every place the code appears is a candidate ruler. How far the line has
+  // slipped is not guessed at: each shift is tried and kept only if the fields it
+  // implies are the shape a zone's fields must be. A code matched by coincidence
+  // puts digits where letters belong and is discarded on that, not on a hunch
+  // about how much of the line could have been lost.
+  for (let at = l2.indexOf(issuingCountry); at >= 0; at = l2.indexOf(issuingCountry, at + 1)) {
+    const shifted = at < 10 ? '<'.repeat(10 - at) + l2 : l2.slice(at - 10);
+    if (looksLikeTd3Line2(shifted, issuingCountry)) return shifted;
+  }
+  return l2;
+}
+
+/** The fixed shape of a second line: a code, two dates, a sex, and their check digits. */
+function looksLikeTd3Line2(l, issuingCountry) {
+  return l.length >= 28
+    && l.slice(10, 13) === issuingCountry
+    && /^\d{6}$/.test(l.slice(13, 19))    // date of birth
+    && /^[0-9<]$/.test(l[19])             // its check digit
+    && /^[MFX<]$/.test(l[20])             // sex
+    && /^\d{6}$/.test(l.slice(21, 27))    // expiry
+    && /^[0-9<]$/.test(l[27]);            // its check digit
 }
 
 function padTo(line, n) {

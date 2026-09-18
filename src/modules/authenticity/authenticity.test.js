@@ -1069,3 +1069,51 @@ describe('REGRESSION: the reported photograph, as it was actually read', () => {
     expect(zone(ALTERED).lines[0]).toBe('P<INDPASUPUNURI<<VARUNSKUMARS<<<<<<<<<<<<<<<');
   });
 });
+
+describe('REGRESSION: the unaltered passport, from the same clipped capture', () => {
+  // The same photograph of the genuine document lost FIVE characters to the frame
+  // ("AM630"), not two. Both must come back on their columns: a realignment that
+  // only reaches the shorter clip reports a genuine passport as unreadable.
+  const GENUINE = ['P<INDPASUPUNURI<<VARUNSKUMAR<<<<<<<<<<<<<<', '833<1IND0611039M36010731066100677725<02MH<<<'];
+  const ALTERED = ['P<INDPASUPUNURI<<VARUNSKUMARS<SLLLLLLLLLLLRL', ' 630833<1IND0611059M36010731066100677725<024<'];
+  const read = (lines, dates, confidence) => determineAuthenticity({
+    documentType: 'passport',
+    ocr: { confidence, rawText: 'X'.repeat(200), fields: {}, vizFields: {}, printedDates: dates, mrz: extractMrzLines(lines.join('\n')), provider: 'tesseract' },
+    tampering: CLEAN_IMAGE,
+  });
+
+  it('recovers the fields whatever the frame took off the front', () => {
+    for (const [lines, dob] of [[GENUINE, '2006-11-03'], [ALTERED, '2006-11-05']]) {
+      const p = parseMrz(extractMrzLines(lines.join('\n')));
+      expect(p.fields.dateOfBirth).toBe(dob);
+      expect(p.fields.expiryDate).toBe('2036-01-07');
+      expect(p.fields.gender).toBe('M');
+    }
+  });
+
+  it('the unaltered passport reports ORIGINAL / REAL', () => {
+    const v = finalVerdict(read(GENUINE, ['2020-11-03', '2036-01-07'], 0.29));
+    expect(v.headline).toBe(VERDICT.ORIGINAL);
+    expect(v.regions).toEqual([]);
+  });
+
+  it('its date of birth verifies against its own check digit', () => {
+    const byId = Object.fromEntries(parseMrz(extractMrzLines(GENUINE.join('\n'))).checks.map((c) => [c.id, c]));
+    expect(byId.mrz_dob.ok).toBe(true);
+    expect(byId.mrz_expiry.ok).toBe(true);
+  });
+
+  it('and the altered one still reports TAMPERED, boxed on the date', () => {
+    const v = finalVerdict(read(ALTERED, ['2008-11-05', '2036-01-07'], 0.31));
+    expect(v.headline).toBe(VERDICT.TAMPERED);
+    expect(v.regions[0].label).toBe('DOB field — suspected modification');
+  });
+
+  it('refuses a shift that would put the wrong shapes in the fields', () => {
+    // A country code matched by coincidence is discarded on the structure it implies,
+    // not on a guess about how much of the line could have been lost.
+    const nonsense = ['P<INDPASUPUNURI<<VARUN<KUMAR<<<<<<<<<<<<<<<<', 'INDINDINDINDINDINDINDINDINDINDINDINDINDINDI'];
+    const mrz = extractMrzLines(nonsense.join('\n'));
+    if (mrz) expect(parseMrz(mrz).checks.filter((c) => c.ok).length).toBeLessThan(2);
+  });
+});
