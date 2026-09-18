@@ -5,7 +5,7 @@
  * so no CDN access is needed; the browser caches them after first load.
  */
 import { parseFields } from './parse.js';
-import { extractMrzLines } from '../validation/mrz.js';
+import { extractMrzLines, parseMrz } from '../validation/mrz.js';
 import { cropBand, rotateDataUrl } from '../../lib/image.js';
 
 let workerPromise = null;
@@ -129,22 +129,43 @@ export async function extract({ imageDataUrl, documentType = 'passport', onProgr
   let { mrz } = best.parsed;
   const pageMrz = Boolean(mrz);
 
-  // No zone from the page-wide pass: look at the band alone, in the orientation
-  // that read best. Without the zone nothing can be cross-checked, and an
-  // altered field has nothing to contradict it.
-  if (!mrz && best.image) {
-    mrz = extractMrzLines(await readMrzBand(best.image, onProgress)) || null;
+  // Read the band on its own unless the page-wide zone already proves itself.
+  //
+  // A zone that fails its check digits is not a zone that was read: a single
+  // character recognised wrongly — 0 as 6 is the common one in this typeface —
+  // breaks the arithmetic exactly as an edit does, and the two are then
+  // indistinguishable. So a second, independent reading is taken from the
+  // enlarged, contrast-flattened band, and whichever of the two verifies more of
+  // its own check digits is kept. Every conclusion downstream rests on these
+  // characters being right, so it is worth the extra pass to be sure of them.
+  // Always, even when the page-wide pass produced a zone that verifies: a
+  // misreading can satisfy the check digits by coincidence, so "it verifies" is
+  // not evidence the characters are right.
+  if (best.image) {
+    const fromBand = extractMrzLines(await readMrzBand(best.image, onProgress));
+    // The band reading wins whenever it yields a well-formed zone. It is the better
+    // instrument by construction — the strip alone, enlarged, flattened to high
+    // contrast, and restricted to the 37 characters that can occur there.
+    //
+    // Note what cannot be used to choose between them: how many check digits each
+    // reading satisfies. On an altered document the true zone FAILS its digits —
+    // that failure is the finding — while a misreading can satisfy them by
+    // coincidence, as 061165 does here for a digit belonging to 061105. Preferring
+    // the reading that verifies would therefore prefer corruption over the truth on
+    // exactly the documents this exists to catch.
+    if (fromBand) mrz = fromBand;
   }
 
   // Re-parse with the zone appended so the printed fields and the zone come from
   // one text, exactly as they would had the page-wide pass found it.
-  const combined = mrz && !pageMrz ? `${best.rawText}\n${mrz.lines.join('\n')}` : best.rawText;
-  const { fields, vizFields } = mrz && !pageMrz ? parseFields(combined, documentType) : best.parsed;
+  const replaced = mrz && (!pageMrz || mrz !== best.parsed.mrz);
+  const combined = replaced ? `${best.rawText}\n${mrz.lines.join('\n')}` : best.rawText;
+  const { fields, vizFields, printedDates } = replaced ? parseFields(combined, documentType) : best.parsed;
 
   const fieldConfidence = Object.fromEntries(Object.keys(fields).map((k) => [k, best.confidence]));
   return {
-    fields, vizFields, fieldConfidence, confidence: best.confidence, rawText: combined, mrz,
-    provider: 'tesseract', mrzPass: Boolean(mrz && !pageMrz), orientation: best.degrees,
+    fields, vizFields, printedDates, fieldConfidence, confidence: best.confidence, rawText: combined, mrz,
+    provider: 'tesseract', mrzPass: Boolean(replaced), orientation: best.degrees,
     durationMs: Math.round(performance.now() - t0),
   };
 }

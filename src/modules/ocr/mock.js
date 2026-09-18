@@ -71,8 +71,8 @@ export async function extract({ documentType = 'passport', scenario = 'clean', m
   // produces Aadhaar text — which is exactly what the preflight type check must catch.
   const type = mockDocument || (documentType === 'auto' || !documentType ? 'passport' : documentType);
   const rawText = sampleText(type, scenario);
-  const { fields, vizFields, mrz } = parseFields(rawText, SAMPLES[type] ? type : 'generic');
+  const { fields, vizFields, mrz, printedDates } = parseFields(rawText, SAMPLES[type] ? type : 'generic');
   const confidence = sc === 'unreadable' ? 0.16 : sc === 'poor_ocr' ? 0.42 : 0.93;
   const fieldConfidence = Object.fromEntries(Object.keys(fields).map((k) => [k, confidence]));
-  return { fields, vizFields, fieldConfidence, confidence, rawText, mrz, provider: 'mock', synthetic: SYNTHETIC, durationMs: Math.round(performance.now() - t0) };
+  return { fields, vizFields, printedDates, fieldConfidence, confidence, rawText, mrz, provider: 'mock', synthetic: SYNTHETIC, durationMs: Math.round(performance.now() - t0) };
 }

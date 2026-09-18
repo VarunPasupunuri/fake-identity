@@ -223,3 +223,19 @@ describe('labels are never mistaken for the values beside them', () => {
     expect(v.regions[0].label).toBe('DOB field — suspected modification');
   });
 });
+
+describe('dates printed on a page whose labels cannot be read', () => {
+  it('collects them without claiming which field each belongs to', () => {
+    const { printedDates } = parseFields('nsx\n05/11/2006      M\nrth 0 a of fs\n08/01/2026\nnf 1 78 Date of Expy.\n07/01/2036', 'passport');
+    expect(printedDates).toEqual(['2006-11-05', '2026-01-08', '2036-01-07']);
+  });
+
+  it('leaves the machine readable zone out, since what it encodes is not what is printed', () => {
+    const text = 'Date of Birth\n05/11/2006\nP<INDDEMO<<ANITA<<<<<<<<<<<<<<<<<<<<<<<<<<<<\nAM630833<1IND0611059M36010731066100677725<02';
+    expect(parseFields(text, 'passport').printedDates).toEqual(['2006-11-05']);
+  });
+
+  it('is empty when nothing date-shaped was recognised', () => {
+    expect(parseFields('#### ## ##\n### #', 'passport').printedDates).toEqual([]);
+  });
+});

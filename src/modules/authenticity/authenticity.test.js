@@ -970,3 +970,38 @@ describe('a document that could not be read is not called genuine', () => {
     expect(v.unreadable).toBe(false);
   });
 });
+
+describe('the page and the zone telling the same altered story', () => {
+  const EDITED = { format: 'TD3', lines: ['P<INDDEMO<<ANITA<<<<<<<<<<<<<<<<<<<<<<<<<<<<', 'AM630833<1IND0611059M36010731066100677725<02'] };
+  const base = { documentNumber: 'AM630833', gender: 'M' };
+
+  it('reads agreement from a date printed anywhere when the label could not be read', () => {
+    // Bilingual labels beside Devanagari come back as noise, so the date of birth
+    // has nothing to anchor to and is never extracted as a labelled field. The date
+    // itself is plain digits and survives — and that it matches the zone is the
+    // point, because a misreading of the zone could not also appear on the page.
+    const ocr = { confidence: 0.49, rawText: 'X'.repeat(200), fields: base, vizFields: base, printedDates: ['2006-11-05', '2026-01-08', '2036-01-07'], mrz: EDITED, provider: 'tesseract' };
+    const r = determineAuthenticity({ documentType: 'passport', ocr, tampering: CLEAN_IMAGE });
+    expect(r.status).toBe(AUTHENTICITY.TAMPERED);
+    const hit = r.indicators.find((i) => i.id === INDICATOR.MRZ_FIELD_RECONSTRUCTED);
+    expect(hit.evidence.printedAgreesWithZone).toBe(true);
+    expect(hit.evidence.agreementFrom).toBe('date printed on the page');
+    expect(finalVerdict(r).regions[0].label).toBe('DOB field — suspected modification');
+  });
+
+  it('stays weak when the page prints no such date, because then a misread zone explains it', () => {
+    const ocr = { confidence: 0.49, rawText: 'X'.repeat(200), fields: base, vizFields: base, printedDates: ['2026-01-08', '2036-01-07'], mrz: EDITED, provider: 'tesseract' };
+    const r = determineAuthenticity({ documentType: 'passport', ocr, tampering: CLEAN_IMAGE });
+    const hit = r.indicators.find((i) => i.id === INDICATOR.MRZ_FIELD_RECONSTRUCTED);
+    expect(hit.severity).toBe(SEVERITY.MEDIUM);
+    expect(r.status).not.toBe(AUTHENTICITY.TAMPERED);
+  });
+
+  it('never names a recovered original, because several values satisfy one check digit', () => {
+    const ocr = { confidence: 0.49, rawText: 'X'.repeat(200), fields: base, vizFields: base, printedDates: ['2006-11-05'], mrz: EDITED, provider: 'tesseract' };
+    const { reason } = finalVerdict(determineAuthenticity({ documentType: 'passport', ocr, tampering: CLEAN_IMAGE }));
+    expect(reason).toMatch(/date of birth/i);
+    expect(reason).toMatch(/check digit/i);
+    expect(reason).not.toMatch(/\d{2}\/\d{2}\/\d{4}/);
+  });
+});

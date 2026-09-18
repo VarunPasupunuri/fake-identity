@@ -13,8 +13,8 @@ export async function extract({ imageDataUrl, documentType = 'passport', onProgr
   const res = await callFunction('ocrExtract', { imageBase64: stripDataUrlPrefix(imageDataUrl) });
   onProgress?.(0.8, 'Parsing fields');
   const rawText = res.rawText || '';
-  const { fields, vizFields, mrz } = parseFields(rawText, documentType);
+  const { fields, vizFields, mrz, printedDates } = parseFields(rawText, documentType);
   const confidence = typeof res.confidence === 'number' ? res.confidence : 0.8;
   const fieldConfidence = Object.fromEntries(Object.keys(fields).map((k) => [k, confidence]));
-  return { fields, vizFields, fieldConfidence, confidence, rawText, mrz, provider: 'cloud-vision', durationMs: Math.round(performance.now() - t0) };
+  return { fields, vizFields, printedDates, fieldConfidence, confidence, rawText, mrz, provider: 'cloud-vision', durationMs: Math.round(performance.now() - t0) };
 }

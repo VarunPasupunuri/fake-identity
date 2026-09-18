@@ -311,13 +311,12 @@ export function summarise({ status, hits, serious, ocrConfidence, ran, profile }
       return `${FIELD_PHRASE[fieldHit.field]} was altered: the printed value conflicts with ${against?.source === 'barcode' ? 'the QR / barcode' : 'the machine readable zone'}.`;
     }
     const rebuilt = [...serious, ...hits].find((i) => i.id === INDICATOR.MRZ_FIELD_RECONSTRUCTED);
-    if (rebuilt) {
-      const was = rebuilt.evidence?.recoveredOriginal;
-      const one = Array.isArray(was) && was.length === 1 && rebuilt.field !== 'documentNumber'
-        ? `${was[0].slice(4, 6)}/${was[0].slice(2, 4)}/${Number(was[0].slice(0, 2)) > 40 ? '19' : '20'}${was[0].slice(0, 2)}`
-        : null;
-      return `${FIELD_PHRASE[rebuilt.field] || 'A field'} was altered: the check digit in the machine readable zone is the one for ${one || 'a different value'}, not for the value now shown.`;
-    }
+    // The original value is recorded in the evidence but deliberately not named here.
+    // Several values can satisfy the same check digit, and the digits used to narrow
+    // them can themselves be misread, so naming one risks stating a wrong fact with
+    // the authority of arithmetic. What is certain is that the value shown is not the
+    // one the check digit was computed for.
+    if (rebuilt) return `${FIELD_PHRASE[rebuilt.field] || 'A field'} was altered: it does not match the check digit printed beside it in the machine readable zone.`;
     if ([...serious, ...hits].some((i) => i.category === CATEGORY.MRZ)) return 'The machine readable zone does not verify against its own check digits.';
     if ([...serious, ...hits].some((i) => i.id === INDICATOR.PHOTO_REPLACEMENT_CORROBORATED)) return 'The portrait appears to have been replaced: the photograph region shows manipulation indicators and does not match the person presenting the document.';
     if (field === 'photo' || [...serious, ...hits].some((i) => i.field === 'photo')) return 'Significant manipulation indicators were detected around the portrait.';
@@ -369,7 +368,7 @@ export function determineAuthenticity({ documentType = 'generic_document', ocr =
 
   // --- 2. MRZ integrity ----------------------------------------------
   const mrzIndicators = [];
-  if (mrzParsed) mrzIndicators.push(...checksumIndicators(mrzParsed, ocrConfidence, visual));
+  if (mrzParsed) mrzIndicators.push(...checksumIndicators(mrzParsed, ocrConfidence, { fields: visual, dates: ocr?.printedDates || [] }));
   else if (profile.mrz) {
     mrzIndicators.push(indicator({
       id: INDICATOR.MRZ_ABSENT, category: CATEGORY.MRZ, severity: SEVERITY.LOW,

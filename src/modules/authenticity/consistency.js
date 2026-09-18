@@ -227,9 +227,6 @@ const CHECK_ALPHABET = { dateOfBirth: '0123456789', expiryDate: '0123456789', do
 /** A six-digit MRZ date that could exist (yymmdd). */
 const isMrzDate = (v) => /^\d{6}$/.test(v) && Number(v.slice(2, 4)) >= 1 && Number(v.slice(2, 4)) <= 12 && Number(v.slice(4, 6)) >= 1 && Number(v.slice(4, 6)) <= 31;
 
-/** `yymmdd` as it is printed on the page, for saying plainly what was changed. */
-const mrzDateToDmy = (v) => `${v.slice(4, 6)}/${v.slice(2, 4)}/${Number(v.slice(0, 2)) > 40 ? '19' : '20'}${v.slice(0, 2)}`;
-
 /**
  * The value a failing check digit was originally computed for.
  *
@@ -322,12 +319,14 @@ function reconstructionIndicators(mrzParsed, visual, ocrConfidence) {
   recovered = narrowByComposite(recovered, mrzParsed, fieldFailures[0]);
 
   const encoded = mrzParsed.fields?.[recovered.field];
-  const printed = visual?.[recovered.field];
-  const agrees = Boolean(printed && encoded && String(printed) === String(encoded));
-  const was = recovered.candidates.length === 1 && recovered.field !== 'documentNumber'
-    ? mrzDateToDmy(recovered.candidates[0])
-    : null;
-
+  const printed = visual?.fields?.[recovered.field];
+  // The page agrees with the zone if it carries that value as the field's own, or —
+  // when the label could not be read — simply prints that date somewhere. Labels are
+  // the fragile part: bilingual, and beside a script an English recogniser turns to
+  // noise. The date itself is plain digits and survives. Either way the question is
+  // the same: do the page and the zone tell the same story?
+  const alsoPrinted = Array.isArray(visual?.dates) && encoded && visual.dates.includes(String(encoded));
+  const agrees = Boolean((printed && encoded && String(printed) === String(encoded)) || alsoPrinted);
   const label = CHECK_PHRASE[recovered.field] || recovered.field;
   return [indicator({
     id: INDICATOR.MRZ_FIELD_RECONSTRUCTED,
@@ -336,8 +335,7 @@ function reconstructionIndicators(mrzParsed, visual, ocrConfidence) {
     field: recovered.field,
     // Point at the printed field, which is where an evaluator can see the change.
     region: FIELD_REGION[recovered.field] || null,
-    explanation: `${label} does not match the check digit printed beside it in the machine readable zone.`
-      + (was ? ` That digit is the one for ${was}, so the encoded value was changed from ${was}.` : '')
+    explanation: `${label} does not match the check digit printed beside it in the machine readable zone, so the value encoded there is not the one that digit was computed for.`
       + (agrees
         ? ' The printed value agrees with the altered zone, so both were changed together; a misreading would have had to occur identically in two separate places on the page.'
         : ' This can also happen when the zone is not read cleanly.'),
@@ -348,6 +346,7 @@ function reconstructionIndicators(mrzParsed, visual, ocrConfidence) {
       checkDigitRequired: fieldFailures[0].expected,
       recoveredOriginal: recovered.candidates,
       printedAgreesWithZone: agrees,
+      agreementFrom: printed && encoded && String(printed) === String(encoded) ? 'labelled field' : alsoPrinted ? 'date printed on the page' : null,
     },
     riskContribution: agrees ? 34 : 14,
     // A zone that verifies its other check digits was read correctly, whatever the

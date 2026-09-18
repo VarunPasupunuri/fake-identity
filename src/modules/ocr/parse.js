@@ -3,7 +3,7 @@
  * (Tesseract in-browser, Cloud Vision via Cloud Function, mock) so that swapping
  * the text engine never changes the field extraction behaviour.
  */
-import { extractMrzLines, parseMrz, isValidIsoDate } from '../validation/mrz.js';
+import { extractMrzLines, parseMrz, isValidIsoDate, normaliseMrzLine } from '../validation/mrz.js';
 
 const MONTHS = { JAN: '01', FEB: '02', MAR: '03', APR: '04', MAY: '05', JUN: '06', JUL: '07', AUG: '08', SEP: '09', OCT: '10', NOV: '11', DEC: '12' };
 
@@ -155,6 +155,33 @@ function grabDate(text, labels) {
  * @param {import('../types.js').DocumentType} documentType
  * @returns {{ fields: import('../types.js').ExtractedFields, vizFields: Object, mrz: {format, lines}|null }}
  */
+
+/**
+ * Every date printed on the page, regardless of which label it belongs to.
+ *
+ * Labels are the fragile part of reading a document: they are bilingual, and on
+ * an Indian passport the English half sits beside Devanagari that an English
+ * recogniser turns to noise, taking the line with it. The dates themselves
+ * survive — they are digits and separators in a plain typeface.
+ *
+ * This gives the dates without claiming which field each belongs to, which is
+ * enough to ask whether the page and the machine readable zone tell the same
+ * story. Zone lines are excluded: what is encoded there is not what is printed.
+ *
+ * @returns {string[]} ISO dates, in the order they appear
+ */
+export function printedDates(rawText) {
+  const out = [];
+  for (const line of String(rawText || '').split(/\r?\n/)) {
+    if (/^[A-Z0-9<]{25,}$/.test(normaliseMrzLine(line))) continue;
+    for (const m of line.matchAll(new RegExp(DATE_RE, 'g'))) {
+      const iso = parseDate(m[1] !== undefined ? m[1] : m[0]);
+      if (iso && !out.includes(iso)) out.push(iso);
+    }
+  }
+  return out;
+}
+
 export function parseFields(rawText, documentType) {
   const text = rawText.replace(/[ \t]+/g, ' ');
   const upper = text.toUpperCase();
@@ -218,7 +245,7 @@ export function parseFields(rawText, documentType) {
     fields.visaNumber = fields.visaNumber || parsed.fields.documentNumber;
     fields.validUntil = fields.validUntil || parsed.fields.expiryDate;
   }
-  return { fields: stripEmpty(fields), vizFields: viz, mrz };
+  return { fields: stripEmpty(fields), vizFields: viz, mrz, printedDates: printedDates(rawText) };
 }
 
 function stripEmpty(o) {
