@@ -4,7 +4,8 @@ import { Search, History, Download, ChevronLeft, ChevronRight } from 'lucide-rea
 import { useAuth } from '../context/AuthContext.jsx';
 import { useSettings } from '../context/SettingsContext.jsx';
 import { listScreenings } from '../services/screenings.js';
-import { RiskBadge, DecisionBadge, AiDecisionBadge, EmptyState, Skeleton, PageHeader, Segmented, Table } from '../components/ui/index.jsx';
+import { RiskBadge, DecisionBadge, AiDecisionBadge, EmptyState, Skeleton, PageHeader, Segmented, Table, Badge } from '../components/ui/index.jsx';
+import { AUTHENTICITY_SHORT } from '../modules/authenticity/index.js';
 import { DOCUMENT_TYPES, DOCUMENT_TYPE_LABEL } from '../modules/types.js';
 import { formatDateTime, timeAgo, caseId } from '../lib/format.js';
 import { toCsv, downloadText } from '../lib/csv.js';
@@ -14,12 +15,31 @@ const RANGES = [{ value: 'all', label: 'All time' }, { value: '1', label: 'Today
 
 const statusOf = (r) => (r.decision ? 'Decided' : 'Pending');
 
-/** Case table: Case ID · Date · Document · Subject · Risk · Assessment · Decision · Officer · Status */
+const AUTH_TONE = { tampered: 'danger', original: 'ok', no_indicators: 'neutral', insufficient_evidence: 'warn' };
+
+/**
+ * Authenticity of the document, as determined by the tampering analysis.
+ * Records created before authenticity existed carry none, and show a dash rather
+ * than being back-filled with a value that was never computed.
+ */
+function AuthenticityBadge({ row }) {
+  const status = row.authenticityStatus || row.authenticity?.status || null;
+  if (!status) return <span className="muted">—</span>;
+  const score = row.authenticityScore ?? row.authenticity?.score ?? null;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      <Badge tone={AUTH_TONE[status] || 'neutral'}>{AUTHENTICITY_SHORT[status] || status}</Badge>
+      {score !== null && score !== undefined && <span className="t-code tabular muted">{score}</span>}
+    </span>
+  );
+}
+
+/** Case table: Case ID · Date · Document · Subject · Authenticity · Risk · Assessment · Decision · Officer · Status */
 export function CaseTable({ rows, showOfficer = false, compact = false, linkBase = '/history' }) {
   return (
     <Table compact={compact} minWidth={showOfficer ? 960 : 860}>
       <thead>
-        <tr><th>Case ID</th><th>Date</th><th>Document type</th><th>Subject</th><th>Risk</th><th>Assessment</th><th>Decision</th>{showOfficer && <th>Officer</th>}<th>Status</th></tr>
+        <tr><th>Case ID</th><th>Date</th><th>Document type</th><th>Subject</th><th>Authenticity</th><th>Risk</th><th>Assessment</th><th>Decision</th>{showOfficer && <th>Officer</th>}<th>Status</th></tr>
       </thead>
       <tbody>
         {rows.map((r) => (
@@ -28,6 +48,7 @@ export function CaseTable({ rows, showOfficer = false, compact = false, linkBase
             <td className="muted whitespace-nowrap" title={formatDateTime(r.createdAt)}>{formatDateTime(r.createdAt)}</td>
             <td>{DOCUMENT_TYPE_LABEL[r.documentType]}<span className="block t-code muted">{r.documentNumber || '—'}</span></td>
             <td className="font-medium">{r.subjectName || 'Unknown'}<span className="block t-caption">{r.nationality || '—'}</span></td>
+            <td><AuthenticityBadge row={r} /></td>
             <td><RiskBadge level={r.risk?.level} score={r.risk?.score} /></td>
             <td><AiDecisionBadge decision={r.aiDecision || r.fusion?.decision} /></td>
             <td><DecisionBadge decision={r.decision} /></td>
@@ -53,7 +74,7 @@ export function CaseCards({ rows, showOfficer, linkBase = '/history' }) {
               <div className="flex items-start justify-between gap-2"><span className="t-code muted">{caseId(r)}</span><DecisionBadge decision={r.decision} /></div>
               <p className="truncate text-sm font-medium">{r.subjectName || 'Unknown'}</p>
               <p className="truncate t-caption">{DOCUMENT_TYPE_LABEL[r.documentType]} · {r.documentNumber || '—'}{showOfficer ? ` · ${r.officerName}` : ''}</p>
-              <div className="mt-1.5 flex flex-wrap items-center gap-1.5"><RiskBadge level={r.risk?.level} score={r.risk?.score} /><AiDecisionBadge decision={r.aiDecision || r.fusion?.decision} /><span className="ml-auto t-caption">{timeAgo(r.createdAt)}</span></div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5"><AuthenticityBadge row={r} /><RiskBadge level={r.risk?.level} score={r.risk?.score} /><AiDecisionBadge decision={r.aiDecision || r.fusion?.decision} /><span className="ml-auto t-caption">{timeAgo(r.createdAt)}</span></div>
             </div>
           </Link>
         </li>
@@ -121,6 +142,7 @@ export function exportCsv(rows, filename = 'cases.csv') {
   const csv = toCsv(rows, [
     { label: 'Case ID', value: (r) => caseId(r) }, { label: 'Record ID', value: 'id' }, { label: 'Created', value: 'createdAt' }, { label: 'Officer', value: 'officerName' }, { label: 'Checkpoint', value: 'checkpoint' },
     { label: 'Document type', value: (r) => DOCUMENT_TYPE_LABEL[r.documentType] }, { label: 'Subject', value: 'subjectName' }, { label: 'Document number', value: 'documentNumber' }, { label: 'Nationality', value: 'nationality' },
+    { label: 'Authenticity', value: (r) => (r.authenticityStatus || r.authenticity?.status || '') }, { label: 'Authenticity score', value: (r) => (r.authenticityScore ?? r.authenticity?.score ?? '') }, { label: 'Tampering severity', value: (r) => (r.tamperSeverity || r.authenticity?.severity || '') },
     { label: 'Risk score', value: (r) => r.risk?.score }, { label: 'Risk level', value: (r) => r.risk?.level }, { label: 'Confidence', value: (r) => r.confidence ?? '' }, { label: 'System assessment', value: (r) => r.aiDecision || r.fusion?.decision || '' },
     { label: 'Validation failed', value: (r) => r.validation?.failed }, { label: 'Integrity score', value: (r) => r.tampering?.score }, { label: 'Face match %', value: (r) => r.face?.confidence }, { label: 'Watchlist', value: (r) => r.watchlist?.status || '' },
     { label: 'Officer decision', value: 'decision' }, { label: 'Decided at', value: 'decidedAt' }, { label: 'Note', value: 'decisionNote' }, { label: 'Processing ms', value: (r) => r.processingMs ?? '' },

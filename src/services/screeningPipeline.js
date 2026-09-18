@@ -21,8 +21,9 @@ import { modules as defaultModules, resolveProviders } from '../modules/registry
 import { toLegacyRisk } from '../modules/fusion/index.js';
 import { getProfile, resolveSelection, LEGACY_TYPES, AUTO_DETECT } from '../modules/documents/registry.js';
 import { parseFields } from '../modules/ocr/parse.js';
+import { determineAuthenticity } from '../modules/authenticity/index.js';
 
-export const STEP_IDS = ['ocr', 'classification', 'validation', 'tampering', 'barcode', 'face', 'watchlist', 'identity', 'issuer', 'risk'];
+export const STEP_IDS = ['ocr', 'classification', 'validation', 'tampering', 'barcode', 'face', 'watchlist', 'identity', 'authenticity', 'issuer', 'risk'];
 /**
  * Stage metadata. `module` carries the SIH problem statement's four mandatory
  * modules (01 OCR, 02 validation, 03 tampering, 04 face) so the processing screen
@@ -37,6 +38,7 @@ export const STEP_META = {
   face: { module: '04', label: 'Face verification', description: 'Comparing the presented person with the document photograph' },
   watchlist: { label: 'Watchlist screening', description: 'Screening identifiers against the configured list' },
   identity: { label: 'Identity correlation', description: 'Comparing with prior screening records' },
+  authenticity: { module: '03', label: 'Authenticity determination', description: 'Cross-checking field representations and correlating forensic evidence' },
   issuer: { label: 'Issuer verification', description: 'Checking for an authorised issuer source' },
   risk: { label: 'Evidence fusion', description: 'Correlating module evidence and calculating risk and confidence' },
 };
@@ -164,11 +166,21 @@ export async function runScreening({ documentType = AUTO_DETECT, documentImage, 
   });
   if (isCancelled()) return null;
 
-  // 5. Issuer verification — explicit, never simulated
+  // 5. Authenticity — was this document altered? Derived only from forensic and
+  // field-level evidence; deliberately independent of risk and of analysis confidence.
+  out.authenticity = await runStep('authenticity', async () => {
+    const p = progress('authenticity');
+    p(0.3, 'Cross-checking printed fields against the MRZ and barcode');
+    p(0.7, 'Correlating forensic evidence with field evidence');
+    return determineAuthenticity({ documentType: out.documentType, ocr: out.ocr, validation: out.validation, tampering: out.tampering, face: out.face, barcode: out.barcode });
+  });
+  if (isCancelled()) return null;
+
+  // 6. Issuer verification — explicit, never simulated
   out.issuer = await runStep('issuer', () => mods.issuer({ provider: providers.issuer, fields: out.ocr?.fields || {}, documentType: out.documentType, onProgress: progress('issuer') }));
   if (isCancelled()) return null;
 
-  // 6. Evidence fusion: never throws on missing inputs — absent modules become `unavailable` evidence.
+  // 7. Evidence fusion: never throws on missing inputs — absent modules become `unavailable` evidence.
   out.fusion = await runStep('risk', async () => {
     const p = progress('risk');
     p(0.2, 'Normalising evidence');

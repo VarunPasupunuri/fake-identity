@@ -35,6 +35,7 @@
  * @property {{ label: string, verification: 'unavailable'|'provider' }} issuer
  * @property {Array} rules                     document-specific consistency rules (see validate.js)
  * @property {string} guidance                 capture hint shown to the officer
+ * @property {number} [aspect]                 width/height of the physical document, for the (weak) geometry check
  * @property {number} [generality]             <1 for catch-all profiles so a specific type wins a close race
  * @property {boolean} [legacy]                validated by the original passport/visa engine
  */
@@ -80,7 +81,7 @@ export const PROFILES = [
       { re: /\b(?:REPUBLIC|KINGDOM|UNITED STATES|GOVERNMENT) OF\b/, weight: 0.05, tier: 'weak', label: 'an issuing state line' },
     ],
     fields: [{ key: 'fullName', required: true }, { key: 'documentNumber', required: true }, { key: 'nationality', required: true }, { key: 'dateOfBirth', required: true }, { key: 'expiryDate', required: true }, { key: 'gender', required: true }, { key: 'surname' }, { key: 'givenNames' }, { key: 'issuingCountry' }, { key: 'placeOfBirth' }, { key: 'dateOfIssue' }],
-    subjectField: 'fullName', primaryIdentifier: 'documentNumber', mrz: true, face: 'required', barcode: false,
+    subjectField: 'fullName', primaryIdentifier: 'documentNumber', mrz: true, face: 'required', barcode: false, aspect: 1.42,
     issuer: { label: 'Passport issuing authority', verification: 'unavailable' }, rules: [],
     guidance: 'Open to the photo page. Both MRZ lines must be fully visible.',
   },
@@ -121,7 +122,7 @@ export const PROFILES = [
       { re: /\bCITIZEN(?:SHIP)?\b/, weight: 0.05, tier: 'weak', label: 'citizenship wording' },
     ],
     fields: [{ key: 'fullName', required: true }, { key: 'documentNumber', required: true }, { key: 'dateOfBirth', required: true }, { key: 'gender' }, { key: 'nationality' }, { key: 'address' }, { key: 'expiryDate' }, { key: 'dateOfIssue' }],
-    subjectField: 'fullName', primaryIdentifier: 'documentNumber', mrz: true, face: 'required', barcode: true,
+    subjectField: 'fullName', primaryIdentifier: 'documentNumber', mrz: true, face: 'required', barcode: true, aspect: 1.585,
     issuer: { label: 'National identity authority', verification: 'unavailable' }, rules: [],
     guidance: 'Front side with photo. Flatten the card to avoid glare.',
   },
@@ -143,7 +144,7 @@ export const PROFILES = [
       { re: /\bLICEN[CS]E\b/, weight: 0.05, tier: 'weak', label: 'the word "licence"' },
     ],
     fields: [{ key: 'fullName', required: true }, { key: 'documentNumber', required: true }, { key: 'dateOfBirth', required: true }, { key: 'expiryDate', required: true }, { key: 'dateOfIssue' }, { key: 'address' }, { key: 'vehicleClasses' }, { key: 'bloodGroup' }, { key: 'issuingAuthority' }],
-    subjectField: 'fullName', primaryIdentifier: 'documentNumber', mrz: false, face: 'required', barcode: true,
+    subjectField: 'fullName', primaryIdentifier: 'documentNumber', mrz: false, face: 'required', barcode: true, aspect: 1.585,
     issuer: { label: 'Transport / licensing authority', verification: 'unavailable' }, rules: [dateOrder('dateOfIssue', 'expiryDate')],
     guidance: 'Front side. Ensure licence number and validity are legible.',
   },
@@ -178,7 +179,7 @@ export const PROFILES = [
       { re: /\bSIGNATURE\b/, weight: 0.02, tier: 'weak', label: 'a signature line' },
     ],
     fields: [{ key: 'fullName', required: true }, { key: 'panNumber', required: true, pattern: /^[A-Z]{5}[0-9]{4}[A-Z]$/, hint: '5 letters, 4 digits, 1 letter' }, { key: 'fatherName' }, { key: 'dateOfBirth', required: true }],
-    subjectField: 'fullName', primaryIdentifier: 'panNumber', mrz: false, face: 'required', barcode: true,
+    subjectField: 'fullName', primaryIdentifier: 'panNumber', mrz: false, face: 'required', barcode: true, aspect: 1.585,
     issuer: { label: 'Income Tax Department', verification: 'unavailable' },
     rules: [notFuture('dateOfBirth'), plausibleAge('dateOfBirth')],
     guidance: 'Front side with the photograph, account number and date of birth visible.',

@@ -21,7 +21,7 @@ const MAX_SIDE = 1000;
 
 /**
  * @param {string} imageDataUrl
- * @returns {Promise<{ elaImage: string, cells: number[][], mean: number, std: number, width: number, height: number }>}
+ * @returns {Promise<{ elaImage: string, cells: number[][], mean: number, std: number, width: number, height: number, pixels: ImageData }>}
  */
 export async function runEla(imageDataUrl) {
   const img = await loadImage(imageDataUrl);
@@ -71,7 +71,9 @@ export async function runEla(imageDataUrl) {
   const flat = cells.flat();
   const mean = flat.reduce((a, b) => a + b, 0) / flat.length;
   const std = Math.sqrt(flat.reduce((a, b) => a + (b - mean) ** 2, 0) / flat.length);
-  return { elaImage: c2.toDataURL('image/jpeg', 0.7), cells, mean, std, width: w, height: h };
+  // `pixels` is returned so the other forensic analyses (noise, resampling, copy-move)
+  // reuse this decode instead of decoding the image again.
+  return { elaImage: c2.toDataURL('image/jpeg', 0.7), cells, mean, std, width: w, height: h, pixels: orig };
 }
 
 /**

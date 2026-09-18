@@ -8,6 +8,7 @@ import { DATE_FIELD_KEYS, IDENTIFIER_FIELD_KEYS } from '../../modules/documents/
 import { formatDate, cx, RISK_STYLES } from '../../lib/format.js';
 import { DecisionPanel, WhyPanel, EvidenceFusionPanel, CorrelationsPanel, EvidenceChainPanel, CounterfactualPanel } from './FusionPanels.jsx';
 import { SignalsPanel, EvidenceGroupsPanel, LimitationsPanel, BarcodePanel, IdentityPanel, WatchlistPanel, WorkflowStrip, ModuleHeading, DetectionPanel } from './UniversalPanels.jsx';
+import { AuthenticityPanel, TamperingIndicatorsPanel, FieldConsistencyPanel } from './AuthenticityPanel.jsx';
 
 const DATE_FIELDS = new Set(DATE_FIELD_KEYS);
 const ID_FIELDS = new Set([...IDENTIFIER_FIELD_KEYS, 'documentNumber', 'visaNumber']);
@@ -25,7 +26,7 @@ const HIDDEN_FIELDS = new Set(['marks', 'subjects']); // rendered as a table, no
  */
 export default function ResultsView({ results, images, children, linkBase = '/history', caseRef }) {
   const inputSource = results.inputSource || null;
-  const { documentType, ocr, validation, tampering, barcode, face, watchlist, identity, risk, fusion, providers, classification } = results;
+  const { documentType, ocr, validation, tampering, barcode, face, watchlist, identity, risk, fusion, providers, classification, authenticity } = results;
   const profile = getProfile(documentType);
   const faceApplies = profile.face !== 'not_applicable';
   const [tab, setTab] = useState('all');
@@ -57,7 +58,18 @@ export default function ResultsView({ results, images, children, linkBase = '/hi
   }
   return (
     <div className="space-y-6">
-      {/* Assessment, risk, confidence and the officer's decision */}
+      {/* 1. DOCUMENT AUTHENTICITY — what the forensic and field evidence says about the document */}
+      <AuthenticityPanel
+        authenticity={authenticity}
+        risk={fusion?.risk?.score ?? null}
+        confidence={fusion?.confidence?.score ?? null}
+        documentLabel={profile.label}
+        verificationStatus={fusion?.decision === 'verified' ? 'Confirmed by an authorised issuer source' : 'Not verified with the issuing authority'}
+      />
+
+      {/* 2. Assessment, and the officer's decision. Deliberately separate from authenticity:
+             a document with no tampering indicators can still need review (poor capture,
+             expired, watchlist), and a tampered one still needs an officer to act. */}
       <DecisionPanel fusion={fusion} documentType={documentType} ocr={ocr} classification={classification} caseRef={caseRef} inputSource={inputSource}>{children}</DecisionPanel>
 
       {/* The module chain, so the workflow is visible at a glance */}
@@ -93,6 +105,8 @@ export default function ResultsView({ results, images, children, linkBase = '/hi
       {show('tamper') && (
         <section className="space-y-3" aria-label="Module 03 tampering detection">
           <ModuleHeading module="03" title="Tampering detection" note={tampering ? `${providers?.tamper || tampering.provider} · image forensics` : 'unavailable'} />
+          <TamperingIndicatorsPanel authenticity={authenticity} />
+          <FieldConsistencyPanel authenticity={authenticity} />
           <TamperingPanel tampering={tampering} image={images?.document} provider={providers?.tamper} />
         </section>
       )}
