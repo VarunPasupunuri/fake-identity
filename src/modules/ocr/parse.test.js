@@ -169,3 +169,57 @@ describe('a capture that comes out fully stacked', () => {
     expect(v.regions).toEqual([]);
   });
 });
+
+describe('labels are never mistaken for the values beside them', () => {
+  // Recognition regularly loses the slash inside a bilingual label, leaving
+  // "Passport No. No de Passeport" and "Given Names Prenoms". Reading the second
+  // half as the value produces a passport number of PASSEPORT, which disagrees
+  // with the machine readable zone and accuses a genuine document.
+  const damaged = [
+    'REPUBLIC OF INDIA                                    PASSPORT',
+    'Typel Type              Gountry Codel Code du Pays:         Passport No. No de Passeport',
+    'P                       IND                                 X1234567',
+    'Sumame/ Nom',
+    'DEMO',
+    'Given Names Prenoms',
+    'ANITA',
+    'Nationaly/ Nationale:        sex/sexe          Date of Birth Date de naissance',
+    'INDIAN                       F                03/11/2006',
+    'Date of issue Date de defrance.                 Date of Expiryl Date dexpiration',
+    '30/06/2021                                      30/06/2031',
+  ].join('\n');
+
+  it('reads the real document number, not the word "Passeport"', () => {
+    expect(read(damaged).vizFields.documentNumber).toBe('X1234567');
+  });
+
+  it('reads the real given name, not the word "Prenoms"', () => {
+    expect(read(damaged).vizFields.givenNames).toBe('ANITA');
+  });
+
+  it('extracts no field whose value is a word off the printing', () => {
+    for (const v of Object.values(read(damaged).vizFields)) {
+      expect(String(v)).not.toMatch(/^(PASSEPORT|PRENOMS?|NOM|NATIONALITE|SEXE|NAISSANCE)$/i);
+    }
+  });
+
+  it('a document number without a digit is not a document number', () => {
+    expect(read('PASSPORT\nPassport No. No de Passeport\nSurname DEMO').vizFields.documentNumber).toBeUndefined();
+  });
+
+  it('does not accuse this document, because nothing on it actually disagrees', () => {
+    const mrz = buildTd3({ docCode: 'P<', issuingCountry: 'IND', surname: 'DEMO', givenNames: 'ANITA', documentNumber: 'X1234567', nationality: 'IND', dateOfBirth: '2006-11-03', gender: 'F', expiryDate: '2031-06-30' });
+    const v = finalVerdict(screen(`${damaged}\n${mrz.lines.join('\n')}`));
+    expect(v.headline).toBe(VERDICT.ORIGINAL);
+    expect(v.regions).toEqual([]);
+  });
+
+  it('and still catches the altered date on the same damaged text', () => {
+    const mrz = buildTd3({ docCode: 'P<', issuingCountry: 'IND', surname: 'DEMO', givenNames: 'ANITA', documentNumber: 'X1234567', nationality: 'IND', dateOfBirth: '2006-11-03', gender: 'F', expiryDate: '2031-06-30' });
+    const v = finalVerdict(screen(`${damaged.replace('03/11/2006', '05/11/2006')}\n${mrz.lines.join('\n')}`));
+    expect(v.headline).toBe(VERDICT.TAMPERED);
+    expect(v.reason).toMatch(/date of birth/i);
+    expect(v.regions).toHaveLength(1);
+    expect(v.regions[0].label).toBe('DOB field — suspected modification');
+  });
+});

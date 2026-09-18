@@ -32,6 +32,31 @@ export async function resizeDataUrl(dataUrl, maxSide = 1400, quality = 0.92) {
 }
 
 /**
+ * Rotate an image by a quarter turn, as a data URL.
+ *
+ * A document photographed with the phone held the other way round arrives
+ * sideways. Text recognition reads horizontal lines, so on a sideways page it
+ * returns noise: no fields, no machine readable zone, nothing to cross-check,
+ * and a forged document with nothing to contradict it.
+ *
+ * @param {string} dataUrl
+ * @param {0|90|180|270} degrees  clockwise
+ */
+export async function rotateDataUrl(dataUrl, degrees) {
+  if (!degrees) return dataUrl;
+  const img = await loadImage(dataUrl);
+  const quarter = degrees === 90 || degrees === 270;
+  const canvas = document.createElement('canvas');
+  canvas.width = quarter ? img.height : img.width;
+  canvas.height = quarter ? img.width : img.height;
+  const ctx = canvas.getContext('2d');
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate((degrees * Math.PI) / 180);
+  ctx.drawImage(img, -img.width / 2, -img.height / 2);
+  return canvas.toDataURL('image/png');
+}
+
+/**
  * Crop a horizontal band of an image and scale it up, as a data URL.
  *
  * The machine readable zone is a small strip of OCR-B at the foot of the page.

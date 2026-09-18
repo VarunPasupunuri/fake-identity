@@ -143,9 +143,16 @@ export const VERDICT = Object.freeze({ ORIGINAL: 'ORIGINAL / REAL', TAMPERED: 'T
  */
 export function finalVerdict(authenticity) {
   const tampered = authenticity?.status === AUTHENTICITY.TAMPERED;
-  // Every highlighted region is drawn in one colour: this screen has a single
-  // meaning for a box, so a severity palette would only invite interpretation.
-  const regions = tampered ? tamperRegions(authenticity).map((r) => ({ ...r, tone: 'high' })) : [];
+  // Only the regions that carry the finding. A tampered document usually also
+  // shows weaker marks elsewhere — compression noise around the portrait, an
+  // edge the camera softened — and boxing those alongside the alteration buries
+  // the one region the evaluator is being asked to look at. Keeping the most
+  // serious tier present points at the alteration itself.
+  const found = tampered ? tamperRegions(authenticity) : [];
+  const top = found.some((r) => r.tone === 'high') ? 'high' : found.some((r) => r.tone === 'medium') ? 'medium' : 'low';
+  // Every box is drawn in one colour: this screen has a single meaning for a box,
+  // so a severity palette would only invite interpretation.
+  const regions = found.filter((r) => r.tone === top).map((r) => ({ ...r, tone: 'high' }));
   return {
     tampered,
     headline: tampered ? VERDICT.TAMPERED : VERDICT.ORIGINAL,

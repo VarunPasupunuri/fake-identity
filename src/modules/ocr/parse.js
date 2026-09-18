@@ -47,6 +47,35 @@ const DATE_LOOKAHEAD = 8;
 /** Words that only ever appear in a label, never in a holder's details. */
 const LABEL_WORDS = /\b(?:SURNAME|FAMILY NAME|LAST NAME|GIVEN NAMES?|FIRST NAMES?|FORENAMES?|NATIONALITY|CITIZENSHIP|DATE OF BIRTH|BIRTH DATE|PLACE OF BIRTH|DATE OF ISSUE|DATE OF EXPIRY|EXPIRY DATE|VALID FROM|VALID UNTIL|VALID TILL|DURATION OF STAY|ISSUING|AUTHORITY|PASSPORT NO|DOCUMENT NO|VISA NO|COUNTRY CODE|SEX|GENDER|TYPE|ENTRIES)\b/i;
 
+/**
+ * Words that are part of a document's printing, never a holder's details.
+ *
+ * Labels on an identity document are usually bilingual — "Passport No./ No de
+ * Passeport", "Given Name(s)/ Prenom(s)" — and recognition regularly loses the
+ * slash between the two halves. With the slash gone the translation looks like
+ * the value sitting after the label, and a passport number of PASSEPORT or a
+ * given name of PRENOMS is then compared against the machine readable zone and
+ * reported as an alteration. Refusing these outright is what keeps a genuine
+ * document from being accused of being a forged one.
+ */
+const NOT_A_VALUE = new Set([
+  // English label words
+  'PASSPORT', 'PASSPORTS', 'SURNAME', 'NAME', 'NAMES', 'GIVEN', 'FORENAME', 'FORENAMES',
+  'NATIONALITY', 'CITIZENSHIP', 'SEX', 'GENDER', 'BIRTH', 'DATE', 'DATES', 'PLACE', 'ISSUE',
+  'EXPIRY', 'EXPIRATION', 'COUNTRY', 'CODE', 'TYPE', 'NUMBER', 'DOCUMENT', 'AUTHORITY',
+  'ISSUING', 'HOLDER', 'SIGNATURE', 'OBSERVATIONS', 'ENDORSEMENTS', 'VALID', 'UNTIL', 'FROM',
+  // the other half of a bilingual label
+  'PASSEPORT', 'PRENOM', 'PRENOMS', 'NOM', 'NOMS', 'NATIONALITE', 'SEXE', 'NAISSANCE',
+  'DELIVRANCE', 'LIEU', 'PAYS', 'NUMERO', 'AUTORITE', 'APELLIDOS', 'NOMBRE', 'NACIONALIDAD',
+  'FECHA', 'NACIMIENTO', 'EXPEDICION', 'CADUCIDAD',
+]);
+
+/** Country codes that may legitimately appear as an issuing country on these documents. */
+const COUNTRY_CODES = new Set(['IND', 'NPL', 'BGD', 'BTN', 'LKA', 'PAK', 'MMR', 'CHN', 'AFG', 'MDV', 'USA', 'GBR', 'CAN', 'AUS', 'NZL', 'SGP', 'MYS', 'THA', 'ARE', 'SAU', 'QAT', 'KWT', 'OMN', 'BHR', 'DEU', 'FRA', 'ITA', 'ESP', 'NLD', 'BEL', 'CHE', 'AUT', 'SWE', 'NOR', 'DNK', 'FIN', 'IRL', 'PRT', 'POL', 'CZE', 'GRC', 'TUR', 'RUS', 'JPN', 'KOR', 'IDN', 'PHL', 'VNM', 'ZAF', 'NGA', 'KEN', 'EGY', 'BRA', 'ARG', 'MEX', 'UTO', 'D<<']);
+
+/** A candidate that is itself part of the printing is not the holder's value. */
+const isNotAValue = (text) => NOT_A_VALUE.has(String(text).toUpperCase().replace(/[^A-Z]/g, ''));
+
 /** A row of headings carries no values, so it is never read as one. */
 const isLabelLine = (line) => LABEL_WORDS.test(line);
 
@@ -56,7 +85,8 @@ function candidates(line, valueRe) {
   const out = [];
   let m;
   while ((m = re.exec(line)) !== null) {
-    out.push({ text: (m[1] !== undefined ? m[1] : m[0]).trim(), at: m.index });
+    const text = (m[1] !== undefined ? m[1] : m[0]).trim();
+    if (text && !isNotAValue(text)) out.push({ text, at: m.index });
     if (m.index === re.lastIndex) re.lastIndex += 1;
   }
   return out;
@@ -138,12 +168,15 @@ export function parseFields(rawText, documentType) {
   if (viz.surname || viz.givenNames) viz.fullName = [viz.givenNames, viz.surname].filter(Boolean).join(' ');
 
   const number = grab(upper, ['PASSPORT NO\\.?', 'PASSPORT NUMBER', 'DOCUMENT NO\\.?', 'DOC NO\\.?', 'ID NO\\.?', 'ID NUMBER', 'LICENCE NO\\.?', 'LICENSE NO\\.?', 'DL NO\\.?', 'PERMIT NO\\.?', 'NO\\.?'], '([A-Z]{0,2}[0-9A-Z]{5,12})');
-  if (number) viz.documentNumber = number.replace(/\s/g, '');
+  // Every document number carries a digit. A run of letters is a word off the page,
+  // and comparing a word against the zone would report an alteration that is not there.
+  if (number && /\d/.test(number)) viz.documentNumber = number.replace(/\s/g, '');
 
   const nat = grab(upper, ['NATIONALITY', 'CITIZENSHIP'], '([A-Z]{3,20})');
   if (nat) viz.nationality = toIso3(nat);
   const issuer = grab(upper, ['ISSUING COUNTRY', 'COUNTRY CODE', 'CODE'], '([A-Z]{3})\\b');
-  if (issuer) viz.issuingCountry = issuer;
+  // Only a real country code. Three letters cut out of a mangled heading are not one.
+  if (issuer && COUNTRY_CODES.has(issuer)) viz.issuingCountry = issuer;
 
   const dob = grabDate(upper, ['DATE OF BIRTH', 'BIRTH DATE', 'DOB', 'BORN']);
   if (dob) viz.dateOfBirth = dob;

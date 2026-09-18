@@ -6,7 +6,7 @@
  */
 import { parseFields } from './parse.js';
 import { extractMrzLines } from '../validation/mrz.js';
-import { cropBand } from '../../lib/image.js';
+import { cropBand, rotateDataUrl } from '../../lib/image.js';
 
 let workerPromise = null;
 let mrzWorkerPromise = null;
@@ -15,6 +15,12 @@ let mrzWorkerPromise = null;
 const MRZ_CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<';
 /** The band of the page the zone occupies, as a fraction of height. */
 const MRZ_BAND = { top: 0.62, height: 0.38, scale: 2 };
+/**
+ * Quarter turns to try, in order. Upright first, because most captures are.
+ * Then the two sideways turns, which is how a page photographed with the phone
+ * held the other way round arrives, and finally upside down.
+ */
+const ORIENTATIONS = [0, 90, 270, 180];
 
 async function getWorker(onProgress) {
   if (!workerPromise) {
@@ -88,32 +94,57 @@ async function readMrzBand(imageDataUrl, onProgress) {
   }
 }
 
+/**
+ * Score a reading of the page. A machine readable zone is worth more than any
+ * amount of confidence: it is the only part of the document that can be checked
+ * against itself, and finding one means the page was read the right way up.
+ */
+const score = (parsed, confidence) => (parsed.mrz ? 1000 : 0) + Object.keys(parsed.vizFields).length * 10 + confidence * 100;
+
 /** @returns {Promise<import('../types.js').OcrResult>} */
 export async function extract({ imageDataUrl, documentType = 'passport', onProgress }) {
   const t0 = performance.now();
   onProgress?.(0.02, 'Loading OCR engine');
   const worker = await getWorker(onProgress);
-  const { data } = await worker.recognize(imageDataUrl);
-  const rawText = data.text || '';
-  const parsed = parseFields(rawText, documentType);
-  let { mrz } = parsed;
 
-  // The zone carries the values every printed field is checked against, so when the
-  // page-wide pass did not yield one it is worth a second look at the band alone.
-  // Without it nothing can be cross-checked, and an altered field has nothing to
-  // contradict it.
-  let mrzText = '';
-  if (!mrz && imageDataUrl) {
-    mrzText = await readMrzBand(imageDataUrl, onProgress);
-    mrz = extractMrzLines(mrzText) || null;
+  // Read the page upright first. If that yields a machine readable zone the
+  // orientation was right and there is nothing to try; otherwise the page may
+  // have been photographed sideways, and a sideways page reads as noise.
+  let best = null;
+  for (const degrees of ORIENTATIONS) {
+    let image = imageDataUrl;
+    if (degrees) {
+      onProgress?.(0.5, 'Trying a different page orientation');
+      try { image = await rotateDataUrl(imageDataUrl, degrees); } catch { continue; }
+    }
+    const { data } = await worker.recognize(image);
+    const rawText = data.text || '';
+    const parsed = parseFields(rawText, documentType);
+    const confidence = Math.max(0, Math.min(1, (data.confidence || 0) / 100));
+    const reading = { degrees, image, rawText, parsed, confidence };
+    if (!best || score(parsed, confidence) > score(best.parsed, best.confidence)) best = reading;
+    if (parsed.mrz) break;
   }
 
-  // Re-parse with the zone appended so the printed fields and the zone are read
-  // from one text, exactly as they would have been had the first pass found it.
-  const combined = mrz && !parsed.mrz ? `${rawText}\n${mrz.lines.join('\n')}` : rawText;
-  const { fields, vizFields } = mrz && !parsed.mrz ? parseFields(combined, documentType) : parsed;
+  let { mrz } = best.parsed;
+  const pageMrz = Boolean(mrz);
 
-  const confidence = Math.max(0, Math.min(1, (data.confidence || 0) / 100));
-  const fieldConfidence = Object.fromEntries(Object.keys(fields).map((k) => [k, confidence]));
-  return { fields, vizFields, fieldConfidence, confidence, rawText: combined, mrz, provider: 'tesseract', mrzPass: Boolean(mrz && !parsed.mrz), durationMs: Math.round(performance.now() - t0) };
+  // No zone from the page-wide pass: look at the band alone, in the orientation
+  // that read best. Without the zone nothing can be cross-checked, and an
+  // altered field has nothing to contradict it.
+  if (!mrz && best.image) {
+    mrz = extractMrzLines(await readMrzBand(best.image, onProgress)) || null;
+  }
+
+  // Re-parse with the zone appended so the printed fields and the zone come from
+  // one text, exactly as they would had the page-wide pass found it.
+  const combined = mrz && !pageMrz ? `${best.rawText}\n${mrz.lines.join('\n')}` : best.rawText;
+  const { fields, vizFields } = mrz && !pageMrz ? parseFields(combined, documentType) : best.parsed;
+
+  const fieldConfidence = Object.fromEntries(Object.keys(fields).map((k) => [k, best.confidence]));
+  return {
+    fields, vizFields, fieldConfidence, confidence: best.confidence, rawText: combined, mrz,
+    provider: 'tesseract', mrzPass: Boolean(mrz && !pageMrz), orientation: best.degrees,
+    durationMs: Math.round(performance.now() - t0),
+  };
 }
