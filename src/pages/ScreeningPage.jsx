@@ -21,7 +21,7 @@ import { cx, caseId } from '../lib/format.js';
 
 const STEPS = [
   { label: 'Document', icon: FileImage },
-  { label: 'Live photo', icon: ScanFace },
+  { label: 'Presented person', icon: ScanFace },
   { label: 'Verification', icon: ListChecks },
   { label: 'Assessment', icon: Gauge },
 ];
@@ -72,7 +72,7 @@ export default function ScreeningPage() {
     startedRef.current = true;
     setStep(2);
     setSaveError('');
-    const out = await pipeline.run({ documentType, documentImage: docImage.dataUrl, documentFile: docImage.file, liveImage: liveImage?.dataUrl, options: { useMock, scenario, mockDocument, providers: settings.providers, history, preflight: preflight.result, preflightOcr: preflight.takeOcr(docImage), preflightOcrImage: docImage.dataUrl } });
+    const out = await pipeline.run({ documentType, documentImage: docImage.dataUrl, documentFile: docImage.file, liveImage: liveImage?.dataUrl, options: { useMock, scenario, mockDocument, providers: settings.providers, history, inputSource: docImage.source === 'camera' ? 'camera' : 'upload', preflight: preflight.result, preflightOcr: preflight.takeOcr(docImage), preflightOcrImage: docImage.dataUrl } });
     if (!out) { startedRef.current = false; return; }
     try {
       const id = await createScreening({ user: { ...user, checkpoint: settings.checkpoint }, requestedType: documentType, images: { document: docImage.dataUrl, live: liveImage?.dataUrl }, ...out, onWarning: (msg) => toast.warn('Image storage fallback', msg) });
@@ -127,7 +127,7 @@ export default function ScreeningPage() {
       <Stepper step={step} />
 
       <div className="mt-6" key={step}>
-        {step === 0 && <div className="animate-fade-in"><DocumentUpload documentType={documentType} onDocumentType={setDocumentType} image={docImage} onImage={setDocImage} onNext={afterDocument} showGuide={settings.captureGuide} nextLabel={faceApplies ? 'Continue to live photo' : 'Run screening'} preflight={preflight} /></div>}
+        {step === 0 && <div className="animate-fade-in"><DocumentUpload documentType={documentType} onDocumentType={setDocumentType} image={docImage} onImage={setDocImage} onNext={afterDocument} showGuide={settings.captureGuide} nextLabel={faceApplies ? 'Continue to presented person' : 'Run screening'} preflight={preflight} /></div>}
         {step === 1 && <div className="animate-fade-in"><LivePhotoCapture image={liveImage} onImage={setLiveImage} onBack={() => setStep(0)} onNext={start} showGuide={settings.captureGuide} /></div>}
         {step === 2 && <div className="animate-fade-in"><ProcessingSteps steps={pipeline.steps} providers={providers} documentImage={docImage?.dataUrl} /></div>}
         {step === 3 && pipeline.results && (

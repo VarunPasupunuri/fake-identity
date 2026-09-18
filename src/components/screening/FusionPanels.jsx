@@ -33,7 +33,7 @@ function Points({ value, suffix }) {
 /* ------------------------------------------------------------------ */
 /* 1 + 2 + 8: system assessment, risk vs confidence, insufficient state */
 /* ------------------------------------------------------------------ */
-export function DecisionPanel({ fusion, documentType, ocr, classification, caseRef, children }) {
+export function DecisionPanel({ fusion, documentType, ocr, classification, caseRef, inputSource, children }) {
   const ui = DECISION_UI[fusion.decision] || DECISION_UI[DECISION.INSUFFICIENT];
   const t = TONE[ui.tone];
   const Icon = t.icon;
@@ -56,7 +56,10 @@ export function DecisionPanel({ fusion, documentType, ocr, classification, caseR
         <div className="min-w-0">
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
             <p className="t-label">Document assessment</p>
-            {caseRef && <p className="t-code tabular faint">{caseRef}</p>}
+            <p className="t-caption faint">
+              {caseRef && <span className="t-code tabular">{caseRef}</span>}
+              {inputSource && <span className="ml-3">Input source: {inputSource === 'camera' ? 'Camera capture' : 'File upload'}</span>}
+            </p>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <Icon className={cx('h-7 w-7 shrink-0', t.text)} aria-hidden="true" />

@@ -24,6 +24,7 @@ const HIDDEN_FIELDS = new Set(['marks', 'subjects']); // rendered as a table, no
  * `mode`    is accepted for callers that render the same view in a different context (e.g. investigation) and is currently informational only.
  */
 export default function ResultsView({ results, images, children, linkBase = '/history', caseRef }) {
+  const inputSource = results.inputSource || null;
   const { documentType, ocr, validation, tampering, barcode, face, watchlist, identity, risk, fusion, providers, classification } = results;
   const profile = getProfile(documentType);
   const faceApplies = profile.face !== 'not_applicable';
@@ -57,7 +58,7 @@ export default function ResultsView({ results, images, children, linkBase = '/hi
   return (
     <div className="space-y-6">
       {/* Assessment, risk, confidence and the officer's decision */}
-      <DecisionPanel fusion={fusion} documentType={documentType} ocr={ocr} classification={classification} caseRef={caseRef}>{children}</DecisionPanel>
+      <DecisionPanel fusion={fusion} documentType={documentType} ocr={ocr} classification={classification} caseRef={caseRef} inputSource={inputSource}>{children}</DecisionPanel>
 
       {/* The module chain, so the workflow is visible at a glance */}
       {overview && <WorkflowStrip fusion={fusion} correlations={(fusion.correlations || []).filter((c) => c.kind !== 'supporting').length} />}

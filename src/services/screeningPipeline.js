@@ -59,6 +59,9 @@ const now = () => (typeof performance !== 'undefined' && performance.now ? perfo
  *   `options.history` (optional) = prior screening rows for identity correlation; `options.mockDocument` = demo document for auto-detect.
  *   `options.preflightOcr` + `options.preflightOcrImage` let the caller hand over the OCR the document-type
  *   check already performed on the same image, so recognition runs once per screening.
+ *   `options.inputSource` records how the document arrived ('camera' | 'upload'). The document is the only
+ *   document input: `liveImage` is a photo of the PERSON presenting it and is used solely for face
+ *   comparison against the portrait on that same document. The two are never compared as documents.
  * @param {{ modules?: Object, onUpdate?: (stepId: string, patch: Object) => void, isCancelled?: () => boolean, log?: Function }} [deps]
  * @returns {Promise<Object|null>} results, or null when cancelled
  */
@@ -179,6 +182,8 @@ export async function runScreening({ documentType = AUTO_DETECT, documentImage, 
   out.decision = out.fusion?.decision || null;
   out.confidence = out.fusion?.confidence?.score ?? null;
   out.preflight = options.preflight || null;
+  // Which input method supplied the document. One screening processes one document input.
+  out.inputSource = options.inputSource || null;
   out.durationMs = Math.round(now() - startedAt);
   return out;
 }

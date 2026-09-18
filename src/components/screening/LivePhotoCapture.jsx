@@ -108,7 +108,7 @@ export default function LivePhotoCapture({ image, onImage, onBack, onNext, allow
                 <button type="button" className="btn-secondary" onClick={() => setFacing((f) => (f === 'user' ? 'environment' : 'user'))}><SwitchCamera className="h-4 w-4" />Switch</button>
               </>
             )}
-            <button type="button" className="btn-secondary" onClick={() => fileRef.current?.click()}><Upload className="h-4 w-4" />Upload</button>
+            <button type="button" className="btn-secondary" onClick={() => fileRef.current?.click()}><Upload className="h-4 w-4" />Upload a photo of the person</button>
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleFile(e.target.files?.[0])} />
           </div>
         </div>
@@ -122,7 +122,8 @@ export default function LivePhotoCapture({ image, onImage, onBack, onNext, allow
       </div>
       <aside className="space-y-3">
         <div className="surface p-4 text-xs muted">
-          <p className="text-sm font-semibold text-[var(--ink)]">Live photo guidance</p>
+          <p className="text-sm font-semibold text-[var(--ink)]">Photo of the presented person</p>
+          <p className="mt-1 t-caption">This is a photograph of the person presenting the document, not a second document. It is compared only against the portrait printed on the document already captured.</p>
           <ul className="mt-2 space-y-1.5"><li>• Neutral expression, eyes open, facing the camera.</li><li>• Remove hats, masks and sunglasses; prescription glasses are fine.</li><li>• Even lighting on the face; avoid strong backlight.</li><li>• Skipping the face check adds 20 points to the risk score.</li></ul>
         </div>
         <div className="surface p-4 text-xs muted"><p className="text-sm font-semibold text-[var(--ink)]">Privacy</p><p className="mt-1">The live image is compared on this device and stored with the screening record under the officer's account for audit purposes.</p></div>

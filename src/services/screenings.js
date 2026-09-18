@@ -52,7 +52,7 @@ export async function uploadScreeningImages({ uid, screeningId, documentImage, l
  * Persist a completed screening (module outputs) — decision may be added later.
  * @returns {Promise<string>} screening id
  */
-export async function createScreening({ user, documentType, requestedType, documentCategory, classification, preflight, images, ocr, validation, tampering, barcode, face, watchlist, identity, issuer, risk, fusion, providers, durationMs, onWarning }) {
+export async function createScreening({ user, documentType, requestedType, documentCategory, classification, preflight, inputSource, images, ocr, validation, tampering, barcode, face, watchlist, identity, issuer, risk, fusion, providers, durationMs, onWarning }) {
   const id = newId();
   const stored = await uploadScreeningImages({ uid: user.uid, screeningId: id, documentImage: images.document, liveImage: images.live });
   if (stored.warning) onWarning?.(stored.warning);
@@ -67,6 +67,8 @@ export async function createScreening({ user, documentType, requestedType, docum
     // Universal document model (null on records created before document profiles existed).
     documentCategory: documentCategory || fusion?.documentCategory || null,
     requestedType: requestedType || null,
+    // How the document was supplied: 'camera' or 'upload' (null on records created before this was tracked).
+    inputSource: inputSource || null,
     classification: classification ? stripUndefined(classification) : null,
     // Preflight document-type check (selected vs detected). Blocked mismatches never reach here:
     // the screening does not start, so no record is created for them.
