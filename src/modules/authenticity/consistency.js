@@ -141,6 +141,54 @@ export function compareRepresentations({ visual = {}, mrz = {}, barcode = {}, oc
   return { indicators, compared };
 }
 
+/**
+ * Field aliases used inside encoded payloads. A QR code writes its own key names;
+ * these map the common ones onto the canonical field names the rest of the platform
+ * uses, so a code can be compared with the printed document at all.
+ */
+const BARCODE_ALIASES = {
+  dateOfBirth: ['dateofbirth', 'dob', 'birthdate', 'dateofbirthiso'],
+  expiryDate: ['expirydate', 'expiry', 'validuntil', 'validtill', 'dateofexpiry'],
+  fullName: ['fullname', 'name', 'holdername', 'subject'],
+  documentNumber: ['documentnumber', 'docnumber', 'number', 'id', 'idnumber', 'registrationnumber', 'certificatenumber', 'rollnumber', 'pannumber', 'epicnumber', 'uid'],
+  nationality: ['nationality', 'citizenship'],
+  gender: ['gender', 'sex'],
+};
+
+/**
+ * Canonical fields carried inside a decoded QR / barcode payload, when it is
+ * structured. Free-text payloads (a URL, a reference string) carry no named
+ * fields and yield nothing — a code that says nothing comparable is not evidence
+ * either way, and must never produce a mismatch.
+ *
+ * @param {{ codes?: {rawValue?: string}[] }|null} barcode  the barcode module's result
+ * @returns {Object} canonical field values found in the payload
+ */
+export function barcodeFields(barcode) {
+  const out = {};
+  for (const code of barcode?.codes || []) {
+    const raw = String(code?.rawValue || '').trim();
+    if (!/^[[{]/.test(raw)) continue;                 // not structured: nothing to compare
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch { continue; }
+    const flat = {};
+    const walk = (v) => {
+      if (!v || typeof v !== 'object') return;
+      for (const [k, val] of Object.entries(v)) {
+        if (val && typeof val === 'object') walk(val);
+        else if (val !== null && val !== undefined && val !== '') flat[k.toLowerCase().replace(/[^a-z]/g, '')] = val;
+      }
+    };
+    walk(parsed);
+    for (const [canonical, aliases] of Object.entries(BARCODE_ALIASES)) {
+      if (out[canonical] !== undefined) continue;
+      const hit = aliases.find((a) => flat[a] !== undefined);
+      if (hit) out[canonical] = flat[hit];
+    }
+  }
+  return out;
+}
+
 /** MRZ check digits: a stated value that fails its own checksum was not written by the issuer. */
 export function checksumIndicators(mrzParsed, ocrConfidence = 1) {
   if (!mrzParsed?.checks?.length) return [];

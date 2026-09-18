@@ -32,13 +32,13 @@
  *
  * Pure and deterministic — no I/O, no clock, no randomness.
  */
-import { compareRepresentations, checksumIndicators } from './consistency.js';
+import { compareRepresentations, checksumIndicators, barcodeFields } from './consistency.js';
 import { INDICATOR, CATEGORY, SEVERITY, SEVERITY_RANK, INDICATOR_STATUS, indicator, peakSeverity } from './indicators.js';
 import { getProfile } from '../documents/registry.js';
 import { parseMrz } from '../validation/mrz.js';
 
 export { INDICATOR, CATEGORY, CATEGORY_LABEL, SEVERITY, INDICATOR_STATUS } from './indicators.js';
-export { compareRepresentations, canonical } from './consistency.js';
+export { compareRepresentations, canonical, barcodeFields } from './consistency.js';
 
 /** @typedef {'tampered'|'original'|'no_indicators'|'insufficient_evidence'} AuthenticityStatus */
 export const AUTHENTICITY = Object.freeze({
@@ -194,30 +194,42 @@ function structureIndicators(profile, fields, textLength) {
   })];
 }
 
-/** Face comparison is only tampering evidence when it is a genuine non-match. */
+/**
+ * Face comparison is only tampering evidence when it is a genuine non-match —
+ * a face that could not be found on either image is unavailable, not a mismatch.
+ *
+ * The face module reports `confidence` on a 0-100 scale (types.js FaceResult).
+ * `similarity` (0..1) is accepted too so a provider may report either.
+ */
 function biometricIndicator(face, profile) {
   if (profile.face === 'not_applicable') return [];
-  if (!face || typeof face.similarity !== 'number' || face.status === 'unavailable') {
+  const similarity = typeof face?.similarity === 'number' ? face.similarity
+    : typeof face?.confidence === 'number' ? face.confidence / 100
+    : null;
+  const compared = Boolean(face) && face.status !== 'unavailable' && similarity !== null
+    && face.documentFaceFound !== false && face.liveFaceFound !== false;
+  if (!compared) {
     return [indicator({
       id: INDICATOR.BIOMETRIC_MISMATCH, category: CATEGORY.BIOMETRIC, severity: SEVERITY.NONE,
       status: INDICATOR_STATUS.UNAVAILABLE,
-      explanation: 'No face comparison was performed, so the portrait was not checked against the person presenting the document.',
+      explanation: face && (face.documentFaceFound === false || face.liveFaceFound === false)
+        ? 'A face could not be detected on one of the images, so the portrait was not checked against the person presenting the document.'
+        : 'No face comparison was performed, so the portrait was not checked against the person presenting the document.',
     })];
   }
-  const match = face.match === true || face.status === 'match';
-  if (match) {
+  if (face.match === true || face.status === 'match') {
     return [indicator({
       id: INDICATOR.BIOMETRIC_MISMATCH, category: CATEGORY.BIOMETRIC, severity: SEVERITY.NONE,
       status: INDICATOR_STATUS.CLEAR,
       explanation: 'The portrait on the document matches the person presenting it.',
-      evidence: { similarity: face.similarity },
+      evidence: { similarity: +similarity.toFixed(2), distance: face.distance ?? null },
     })];
   }
   return [indicator({
     id: INDICATOR.BIOMETRIC_MISMATCH, category: CATEGORY.BIOMETRIC, severity: SEVERITY.MEDIUM,
-    explanation: `The portrait on the document does not match the person presenting it (similarity ${Math.round((face.similarity || 0) * 100)}%). This concerns who is presenting the document; on its own it is not evidence that the document was altered.`,
+    explanation: `The portrait on the document does not match the person presenting it (${Math.round(similarity * 100)}% match confidence). This concerns who is presenting the document; on its own it is not evidence that the document was altered.`,
     field: 'photo',
-    evidence: { similarity: face.similarity, threshold: face.threshold ?? null },
+    evidence: { similarity: +similarity.toFixed(2), distance: face.distance ?? null },
     riskContribution: 12,
     confidence: 0.6,
   })];
@@ -238,6 +250,25 @@ function correlate(indicators) {
   const fieldMismatches = detected(indicators).filter((i) => i.category === CATEGORY.FIELD && i.region);
   const forensic = detected(indicators).filter((i) => i.category === CATEGORY.FORENSICS && i.region);
   const links = [];
+
+  // Photo replacement: the portrait region carries forensic anomalies AND the person
+  // presenting the document does not match that portrait. Either alone is ordinary —
+  // glare and a laminate produce the first, a poor capture the second — but a portrait
+  // that looks composited and belongs to someone else is what a substituted photo is.
+  const photoForensic = detected(indicators).find((i) => i.category === CATEGORY.FORENSICS && i.field === 'photo');
+  const biometric = detected(indicators).find((i) => i.category === CATEGORY.BIOMETRIC);
+  if (photoForensic && biometric) {
+    links.push({
+      id: `correlation:${INDICATOR.PHOTO_REPLACEMENT_INDICATOR}+${INDICATOR.BIOMETRIC_MISMATCH}`,
+      field: 'photo',
+      indicators: [photoForensic.id, biometric.id],
+      explanation: 'The portrait region shows forensic anomalies AND the person presenting the document does not match that portrait. Image analysis and face comparison are independent methods, and both point at the photograph.',
+      gain: AUTH.CORRELATION_GAIN,
+      elevates: true,
+      compositeId: INDICATOR.PHOTO_REPLACEMENT_CORROBORATED,
+    });
+  }
+
   for (const f of fieldMismatches) {
     for (const g of forensic) {
       if (!overlaps(f.region, g.region)) continue;
@@ -251,6 +282,48 @@ function correlate(indicators) {
     }
   }
   return links;
+}
+
+/* ------------------------------------------------------------------ */
+/* One-line summary                                                     */
+/* ------------------------------------------------------------------ */
+/** Plain-English names for the fields an officer sees named in a verdict. */
+const FIELD_PHRASE = {
+  dateOfBirth: 'Date of birth',
+  documentNumber: 'Document number',
+  expiryDate: 'Expiry date',
+  fullName: 'Name',
+  nationality: 'Nationality',
+  gender: 'Sex',
+};
+
+/**
+ * The single sentence shown with the verdict. It names the strongest actual
+ * finding — which field was altered, or which kind of evidence was found —
+ * rather than repeating the status in longer words.
+ */
+export function summarise({ status, hits, serious, ocrConfidence, ran, profile }) {
+  if (status === AUTHENTICITY.TAMPERED) {
+    const field = (serious[0] || hits[0])?.field;
+    const fieldHit = [...serious, ...hits].find((i) => i.category === CATEGORY.FIELD && FIELD_PHRASE[i.field]);
+    if (fieldHit) {
+      const against = fieldHit.evidence?.representations?.find((r) => r.source !== 'visual');
+      return `${FIELD_PHRASE[fieldHit.field]} was altered: the printed value conflicts with ${against?.source === 'barcode' ? 'the QR / barcode' : 'the machine readable zone'}.`;
+    }
+    if ([...serious, ...hits].some((i) => i.category === CATEGORY.MRZ)) return 'The machine readable zone does not verify against its own check digits.';
+    if ([...serious, ...hits].some((i) => i.id === INDICATOR.PHOTO_REPLACEMENT_CORROBORATED)) return 'The portrait appears to have been replaced: the photograph region shows manipulation indicators and does not match the person presenting the document.';
+    if (field === 'photo' || [...serious, ...hits].some((i) => i.field === 'photo')) return 'Significant manipulation indicators were detected around the portrait.';
+    return 'Significant image or text manipulation indicators were detected.';
+  }
+  if (status === AUTHENTICITY.INSUFFICIENT) {
+    if (!ran.textLegible) return 'Insufficient reliable evidence to determine document authenticity: too little of the document could be read.';
+    return 'Insufficient reliable evidence to determine document authenticity.';
+  }
+  if (status === AUTHENTICITY.ORIGINAL) return 'Document fields are consistent and no significant manipulation indicators were detected.';
+  // NO_INDICATORS — nothing found, but say plainly that the analysis was incomplete.
+  if (!ran.mrzIntegrity && profile.mrz) return 'No manipulation indicators were detected, but the machine readable zone could not be read, so the printed fields could not be cross-checked.';
+  if (!ran.fieldCrossCheck) return 'No manipulation indicators were detected, but no field could be read from two independent places, so nothing could be cross-checked.';
+  return 'No manipulation indicators were detected, though not every check could run.';
 }
 
 /* ------------------------------------------------------------------ */
@@ -269,12 +342,16 @@ export function determineAuthenticity({ documentType = 'generic_document', ocr =
   const textLength = (ocr?.rawText || '').trim().length;
 
   const mrzParsed = ocr?.mrz ? parseMrz(ocr.mrz) : null;
-  const barcodeFields = barcode?.fields || barcode?.decoded?.fields || null;
+  const encoded = barcodeFields(barcode);
 
   // --- 1. the same fact, read from independent places -----------------
   const legibleEnough = ocrConfidence >= AUTH.MIN_OCR_FOR_FIELDS;
+  // "Printed" means the visual zone where the OCR provider separates it (travel documents,
+  // where `fields` is MRZ-seeded and comparing it with the MRZ would be circular), and the
+  // extracted fields everywhere else, where those ARE the printed values.
+  const printed = Object.keys(visual).length ? visual : fields;
   const { indicators: fieldIndicators, compared } = legibleEnough
-    ? compareRepresentations({ visual, mrz: mrzParsed?.fields || {}, barcode: barcodeFields || {}, ocrConfidence })
+    ? compareRepresentations({ visual: printed, mrz: mrzParsed?.fields || {}, barcode: encoded, ocrConfidence })
     : { indicators: [], compared: [] };
   const crossChecked = compared.filter((c) => c.status !== 'not_compared').length;
 
@@ -308,8 +385,34 @@ export function determineAuthenticity({ documentType = 'generic_document', ocr =
   }
 
   const correlations = correlate(all);
+  // A correlation that joins two independently-weak signals produces a finding of its own.
+  // Amplifying the members is not enough: the composite IS the evidence, and it is what an
+  // officer needs to see named.
+  for (const c of correlations.filter((x) => x.elevates)) {
+    all.push(indicator({
+      id: c.compositeId,
+      category: CATEGORY.FORENSICS,
+      severity: SEVERITY.HIGH,
+      explanation: c.explanation,
+      field: c.field,
+      evidence: { from: c.indicators },
+      riskContribution: 50,
+      // Two heuristics agreeing is stronger than either, but neither is exact.
+      confidence: 0.7,
+    }));
+  }
 
-  // --- 4. coverage: how much of the analysis actually ran --------------
+  // --- 4. coverage: how much of the ACHIEVABLE analysis actually ran ----
+  // Measured against what this document type makes possible, not against an absolute.
+  // A driving licence has no machine readable zone; not having one is a property of the
+  // document, not a gap in the analysis, and must not hold the result down for ever.
+  const applicable = {
+    fieldCrossCheck: Boolean(profile.mrz || profile.barcode),
+    mrzIntegrity: Boolean(profile.mrz),
+    imageForensics: true,
+    textLegible: true,
+    structure: true,
+  };
   const ran = {
     fieldCrossCheck: crossChecked > 0,
     mrzIntegrity: Boolean(mrzParsed),
@@ -317,8 +420,9 @@ export function determineAuthenticity({ documentType = 'generic_document', ocr =
     textLegible: legibleEnough,
     structure: textLength >= 24,
   };
-  const coverage = +Object.entries(AUTH.COVERAGE_WEIGHTS)
-    .reduce((s, [k, w]) => s + (ran[k] ? w : 0), 0).toFixed(3);
+  const possible = Object.entries(AUTH.COVERAGE_WEIGHTS).reduce((s, [k, w]) => s + (applicable[k] ? w : 0), 0);
+  const achieved = Object.entries(AUTH.COVERAGE_WEIGHTS).reduce((s, [k, w]) => s + (applicable[k] && ran[k] ? w : 0), 0);
+  const coverage = possible > 0 ? +(achieved / possible).toFixed(3) : 0;
 
   // --- 5. score: built from evidence, never from risk or confidence ----
   const hits = detected(all);
@@ -339,7 +443,10 @@ export function determineAuthenticity({ documentType = 'generic_document', ocr =
   const severity = peakSeverity(all);
   let status;
   if (serious.length || (coverage >= AUTH.MIN_COVERAGE && penalty >= AUTH.TAMPER_PENALTY)) status = AUTHENTICITY.TAMPERED;
-  else if (coverage < AUTH.MIN_COVERAGE) status = AUTHENTICITY.INSUFFICIENT;
+  // Text is the precondition for every field-level check. Where none could be read, image
+  // forensics alone cannot support "no tampering indicators" any more than it could support
+  // "tampered": we did not see the document's content at all.
+  else if (!ran.textLegible || coverage < AUTH.MIN_COVERAGE) status = AUTHENTICITY.INSUFFICIENT;
   else if (coverage >= AUTH.ORIGINAL_COVERAGE && rawScore >= AUTH.ORIGINAL_SCORE && !hits.some((i) => SEVERITY_RANK[i.severity] >= SEVERITY_RANK[SEVERITY.MEDIUM])) status = AUTHENTICITY.ORIGINAL;
   else status = AUTHENTICITY.NO_INDICATORS;
 
@@ -370,8 +477,12 @@ export function determineAuthenticity({ documentType = 'generic_document', ocr =
     if (status === AUTHENTICITY.NO_INDICATORS) reasons.push('Not every check could run, so the absence of indicators is reported as such rather than as positive evidence that the document is original.');
   }
 
+  // One sentence for the officer, naming the actual finding rather than restating the status.
+  const summary = summarise({ status, hits, serious, ocrConfidence, ran, profile });
+
   const limitations = [LIMITATION_PHYSICAL, LIMITATION_ISSUER];
   if (!ran.mrzIntegrity && profile.mrz) limitations.push('The machine readable zone could not be read, so printed values could not be cross-checked against it.');
+  if (!applicable.fieldCrossCheck) limitations.push(`A ${profile.label.toLowerCase()} carries no machine readable zone or code that repeats its printed fields, so those fields could not be cross-checked against a second representation.`);
   if (!ran.imageForensics) limitations.push('No image forensics were available for this screening.');
 
   return {
@@ -383,10 +494,12 @@ export function determineAuthenticity({ documentType = 'generic_document', ocr =
     severity,
     coverage,
     coverageDetail: ran,
+    coverageApplicable: applicable,
     indicators: all,
     detectedCount: hits.length,
     correlations,
     compared,
+    summary,
     reasons,
     limitations,
     basis: 'classical forensic analysis and field cross-checking of the supplied image',

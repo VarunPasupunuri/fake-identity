@@ -9,6 +9,9 @@ import { FIELD_LABELS } from '../validation/rules.js';
 /**
  * Decision gates, evaluated in order. The first gate that fires decides.
  *
+ *  REJECT (authenticity)  the authenticity determination concluded the document was altered.
+ *                         Evaluated FIRST: a document shown to be tampered with is rejected on
+ *                         that ground alone, whatever the rest of the evidence says.
  *  INSUFFICIENT_EVIDENCE  OCR unavailable / no fields;  confidence < 50;
  *                         or risk ≥ 60 while confidence < 60 (a serious finding we cannot stand behind)
  *  REJECT                 risk ≥ 60;  a conclusive failing item (REJECT_ON_FAIL: expired document, watchlist
@@ -20,8 +23,13 @@ import { FIELD_LABELS } from '../validation/rules.js';
  *                         face) unavailable;  or confidence below the approve floor (70)
  *  APPROVE                everything else
  */
-export function decide({ evidence, correlations, risk, confidence }) {
+export function decide({ evidence, correlations, risk, confidence, authenticity = null }) {
   const ev = Object.fromEntries(evidence.map((e) => [e.id, e]));
+  // A tampered document is rejected on that finding alone. The officer still decides;
+  // this is the system's recommendation, not an action.
+  if (authenticity?.status === 'tampered') {
+    return { decision: DECISION.REJECT, gates: ['document_tampered'], reasons: ['authenticity:tampered'] };
+  }
   const fails = evidence.filter((e) => e.status === STATUS.FAIL);
   const conclusive = fails.filter((e) => REJECT_ON_FAIL.includes(e.id));
   const gates = [];
@@ -56,6 +64,11 @@ export function decide({ evidence, correlations, risk, confidence }) {
   if (ev['barcode:unreadable']) fire('barcode_unreadable', ['barcode:unreadable']);
   const coreMissing = CORE_UNAVAILABLE_IDS.filter((id) => ev[id]);
   if (coreMissing.length) fire('core_analysis_unavailable', coreMissing);
+  // Nothing was found against the document, but not enough ran to call it original.
+  // "We did not find anything" is not a reason to wave someone through — unless an
+  // authorised issuer source actually confirmed the record, which outranks image analysis.
+  const issuerConfirmed = ev['issuer:result']?.status === STATUS.PASS && ev['issuer:result'].value?.status === 'verified';
+  if (authenticity && authenticity.status !== 'original' && !issuerConfirmed) fire('authenticity_not_established', ['authenticity:coverage']);
   if (confidence.score < CONFIDENCE.thresholds.approve) fire('confidence_below_approve', confidence.components.filter((c) => c.points < c.max).map((c) => `confidence:${c.id}`));
   if (gates.length) return { decision: DECISION.REVIEW, gates, reasons: [...reasons] };
 

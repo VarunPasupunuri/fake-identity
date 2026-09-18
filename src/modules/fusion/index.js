@@ -26,6 +26,7 @@
  * @property {{ type: string, confidence: number, provider?: string, overridden?: boolean }} [classification]
  * @property {{ status: 'clear'|'match'|'possible'|'unavailable'|'confirmed_match'|'possible_match', matches?: Object[], source?: string, confidence?: number, explanation?: string, fieldsUsed?: string[], synthetic?: boolean }} [watchlist]
  * @property {{ status?: 'ok'|'unavailable', links?: Object[] }} [identity]
+ * @property {Object} [authenticity]   the authenticity determination (modules/authenticity/), when it ran
  * @property {{ ocr?: string, tamper?: string, face?: string }} [providers]
  */
 import { normaliseEvidence } from './evidence.js';
@@ -49,7 +50,7 @@ function run(inputs, evidence) {
   const correlations = correlate(evidence);
   const risk = scoreRisk(evidence, correlations);
   const confidence = computeConfidence(inputs, evidence);
-  const verdict = decide({ evidence, correlations, risk, confidence });
+  const verdict = decide({ evidence, correlations, risk, confidence, authenticity: inputs.authenticity || null });
   return { evidence, correlations, risk, confidence, ...verdict };
 }
 
@@ -58,7 +59,7 @@ function run(inputs, evidence) {
  * @returns {FusionResult}
  */
 export function fuseEvidence(inputs) {
-  const safe = { documentType: 'passport', ocr: null, validation: null, tampering: null, face: null, ...(inputs || {}) };
+  const safe = { documentType: 'passport', ocr: null, validation: null, tampering: null, face: null, authenticity: null, ...(inputs || {}) };
   // Document-profile requirements (face applicability, MRZ, barcode) drive evidence normalisation and confidence.
   const profile = getProfile(safe.documentType);
   safe.requirements = { face: profile.face, mrz: profile.mrz, barcode: profile.barcode, ...(inputs?.requirements || {}) };

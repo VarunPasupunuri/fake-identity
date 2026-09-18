@@ -10,7 +10,7 @@ import { createScreening, recordDecision, listIdentityHistory } from '../service
 import DocumentUpload from '../components/screening/DocumentUpload.jsx';
 import LivePhotoCapture from '../components/screening/LivePhotoCapture.jsx';
 import ProcessingSteps from '../components/screening/ProcessingSteps.jsx';
-import ResultsView from '../components/screening/ResultsView.jsx';
+import VerdictView from '../components/screening/VerdictView.jsx';
 import DecisionBar from '../components/screening/DecisionBar.jsx';
 import { PageHeader } from '../components/ui/index.jsx';
 import { resolveProviders } from '../modules/registry.js';
@@ -19,9 +19,17 @@ import { DEMO_DOCUMENTS } from '../modules/documents/fixtures.js';
 import { SCENARIO_OPTIONS, scenarioProfile } from '../modules/documents/scenarios.js';
 import { cx, caseId } from '../lib/format.js';
 
+/**
+ * One document, one screening. The document is provided EITHER by camera capture
+ * OR by file upload — never both, and the two are never compared with each other.
+ *
+ * Step 2 is optional: a photograph of the person presenting the document enables
+ * face verification against the portrait printed on that same document. Skipping
+ * it costs that one check and is reported as such; it never blocks the screening.
+ */
 const STEPS = [
   { label: 'Document', icon: FileImage },
-  { label: 'Presented person', icon: ScanFace },
+  { label: 'Presented person', icon: ScanFace, optional: true },
   { label: 'Verification', icon: ListChecks },
   { label: 'Assessment', icon: Gauge },
 ];
@@ -95,7 +103,10 @@ export default function ScreeningPage() {
   };
 
   const restart = () => { pipeline.reset(); preflight.reset(); startedRef.current = false; setStep(0); setDocImage(null); setLiveImage(null); setScreeningId(null); setDecided(null); setSaveError(''); };
-  const afterDocument = () => { if (preflight.blocking) return; return faceApplies ? setStep(1) : start(); };
+  // The document alone is enough to screen. Adding a photo of the person is a
+  // separate, explicit choice, not a gate in front of the result.
+  const afterDocument = () => { if (preflight.blocking) return; return start(); };
+  const addPersonPhoto = () => { if (preflight.blocking) return; setStep(1); };
 
   // Auto-run after live capture when enabled in settings
   useEffect(() => { if (settings.autoRunAfterCapture && step === 1 && liveImage && docImage) start(); }, [liveImage]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -103,7 +114,7 @@ export default function ScreeningPage() {
 
   return (
     <div>
-      <PageHeader title="Screen document" subtitle="Provide the document, capture the presented person, then review the verification result and record a decision."
+      <PageHeader title="Screen document" subtitle="Capture or upload one document, then review the authenticity result and record a decision."
         actions={step < 2 && (
           <div className="flex flex-wrap items-center gap-2 t-body-sm">
             <label className="flex min-h-9 cursor-pointer items-center gap-2 rounded-md hairline px-3"><input type="checkbox" checked={useMock} onChange={(e) => setUseMock(e.target.checked)} className="h-4 w-4 accent-[var(--brand)]" /><FlaskConical className="h-4 w-4 faint" aria-hidden="true" />Demonstration data</label>
@@ -127,19 +138,19 @@ export default function ScreeningPage() {
       <Stepper step={step} />
 
       <div className="mt-6" key={step}>
-        {step === 0 && <div className="animate-fade-in"><DocumentUpload documentType={documentType} onDocumentType={setDocumentType} image={docImage} onImage={setDocImage} onNext={afterDocument} showGuide={settings.captureGuide} nextLabel={faceApplies ? 'Continue to presented person' : 'Run screening'} preflight={preflight} /></div>}
+        {step === 0 && <div className="animate-fade-in"><DocumentUpload documentType={documentType} onDocumentType={setDocumentType} image={docImage} onImage={setDocImage} onNext={afterDocument} showGuide={settings.captureGuide} nextLabel="Run screening" preflight={preflight} secondaryAction={faceApplies ? { label: 'Add photo of person (optional)', onClick: addPersonPhoto } : null} /></div>}
         {step === 1 && <div className="animate-fade-in"><LivePhotoCapture image={liveImage} onImage={setLiveImage} onBack={() => setStep(0)} onNext={start} showGuide={settings.captureGuide} /></div>}
         {step === 2 && <div className="animate-fade-in"><ProcessingSteps steps={pipeline.steps} providers={providers} documentImage={docImage?.dataUrl} /></div>}
         {step === 3 && pipeline.results && (
           <div className="animate-fade-in space-y-5">
             {saveError && <div className="alert alert-danger">{saveError}</div>}
-            <ResultsView results={pipeline.results} images={{ document: docImage?.dataUrl, live: liveImage?.dataUrl }} linkBase="/history" caseRef={screeningId ? caseId({ id: screeningId, createdAt: new Date().toISOString() }) : 'Saving case…'}>
+            <VerdictView results={pipeline.results} images={{ document: docImage?.dataUrl, live: liveImage?.dataUrl }} linkBase="/history" caseRef={screeningId ? caseId({ id: screeningId, createdAt: new Date().toISOString() }) : 'Saving case…'}>
               {decided ? (
                 <div className="flex items-center gap-2 rounded-md hairline px-3 py-3 text-sm font-medium status-ok"><Check className="h-4 w-4" aria-hidden="true" />Decision recorded — opening case…</div>
               ) : (
                 <DecisionBar recommendation={pipeline.results.risk?.recommendation} aiDecision={pipeline.results.fusion?.decision} onDecide={decide} busy={!screeningId} />
               )}
-            </ResultsView>
+            </VerdictView>
             <div className="flex flex-wrap items-center justify-between gap-3 pb-20 lg:pb-0">
               <button type="button" className="btn-secondary" onClick={restart}><RotateCcw className="h-4 w-4" aria-hidden="true" />Screen another document</button>
               <p className="t-caption tabular">{typeof pipeline.results.durationMs === 'number' ? `Verification completed in ${(pipeline.results.durationMs / 1000).toFixed(1)} s` : ''}</p>
@@ -162,7 +173,7 @@ function Stepper({ step }) {
         return (
           <li key={s.label} className="flex flex-col gap-1.5" aria-current={state === 'active' ? 'step' : undefined}>
             <div className={cx('h-1 rounded-xs', state === 'done' ? 'bg-[var(--ok)]' : state === 'active' ? 'bg-[var(--brand)]' : 'bg-[var(--border)]')} />
-            <span className={cx('flex items-center gap-1.5 t-caption', state === 'active' ? 'font-medium text-[var(--ink)]' : state === 'done' ? 'text-[var(--ok)]' : '')}><s.icon className="h-3.5 w-3.5" aria-hidden="true" /><span className="hidden sm:inline">{i + 1}. </span>{s.label}</span>
+            <span className={cx('flex items-center gap-1.5 t-caption', state === 'active' ? 'font-medium text-[var(--ink)]' : state === 'done' ? 'text-[var(--ok)]' : '')}><s.icon className="h-3.5 w-3.5" aria-hidden="true" /><span className="hidden sm:inline">{i + 1}. </span>{s.label}{s.optional && <span className="faint"> (optional)</span>}</span>
           </li>
         );
       })}

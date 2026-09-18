@@ -36,7 +36,7 @@ export const SCENARIO_PROFILES = [
   {
     id: 'tampered_dob', label: 'Tampered date of birth', sih: true,
     summary: 'Printed date of birth disagrees with the MRZ and image forensics flag that same region.',
-    expected: 'Review required', ocr: 'dob_mismatch', tampering: 'dob_region', face: 'match',
+    expected: 'Reject', ocr: 'dob_mismatch', tampering: 'dob_region', face: 'match',
   },
   {
     id: 'photo_substitution', label: 'Altered photograph', sih: true,

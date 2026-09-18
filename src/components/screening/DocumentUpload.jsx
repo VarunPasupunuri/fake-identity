@@ -21,7 +21,15 @@ const MAX_BYTES = 15 * 1024 * 1024;
  *   Upload file      → native file picker
  * Both paths produce the same { dataUrl, file, name } object for the pipeline.
  */
-export default function DocumentUpload({ documentType, onDocumentType, image, onImage, onNext, showGuide = true, nextLabel = 'Continue to live photo', preflight }) {
+/**
+ * The document step. The officer provides ONE document, by camera capture OR by
+ * file upload — the two are alternative inputs to the same screening, never
+ * compared with each other.
+ *
+ * `secondaryAction`, when given, offers the optional photo-of-the-person step.
+ * It is deliberately secondary: the document alone is enough to screen.
+ */
+export default function DocumentUpload({ documentType, onDocumentType, image, onImage, onNext, showGuide = true, nextLabel = 'Run screening', preflight, secondaryAction = null }) {
   const fileRef = useRef(null);
   const typeRef = useRef(null);
   const [mode, setMode] = useState('choose'); // choose | camera
@@ -148,6 +156,9 @@ export default function DocumentUpload({ documentType, onDocumentType, image, on
         <div className="flex flex-col gap-2 border-t divider pt-4 sm:flex-row sm:items-center sm:justify-end">
           {preflight?.blocking && <p className="t-caption status-danger sm:mr-auto">Screening is blocked until the document type matches.</p>}
           {preflight?.state === 'checking' && <p className="t-caption muted sm:mr-auto">Checking document type…</p>}
+          {secondaryAction && (
+            <button type="button" className="btn-secondary" disabled={!image || busy || preflight?.blocking || preflight?.state === 'checking'} onClick={secondaryAction.onClick}>{secondaryAction.label}</button>
+          )}
           <button type="button" className="btn-primary sm:min-w-52" disabled={!image || busy || preflight?.blocking || preflight?.state === 'checking'} onClick={onNext}>{nextLabel}</button>
         </div>
       </div>

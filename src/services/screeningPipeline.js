@@ -185,7 +185,7 @@ export async function runScreening({ documentType = AUTO_DETECT, documentImage, 
     const p = progress('risk');
     p(0.2, 'Normalising evidence');
     p(0.5, 'Correlating verification evidence');
-    const fusion = mods.fusion({ documentType: out.documentType, ocr: out.ocr, validation: out.validation, tampering: out.tampering, face: out.face, barcode: out.barcode, watchlist: out.watchlist, identity: out.identity, issuer: out.issuer, classification: out.classification, providers });
+    const fusion = mods.fusion({ documentType: out.documentType, ocr: out.ocr, validation: out.validation, tampering: out.tampering, authenticity: out.authenticity, face: out.face, barcode: out.barcode, watchlist: out.watchlist, identity: out.identity, issuer: out.issuer, classification: out.classification, providers });
     p(0.9, 'Calculating risk and confidence');
     return fusion;
   });

@@ -272,7 +272,9 @@ describe('SIH demonstration scenarios (synthetic, deterministic)', () => {
     expect(flag).toBeTruthy();
     // The two independent findings must correlate — that is the point of the case.
     expect(out.fusion.correlations.map((c) => c.id)).toContain('corr:mrz_field_tamper:dateOfBirth');
-    expect(out.fusion.decision).toBe(DECISION.REVIEW);
+    // A document shown to be tampered with is rejected on that finding alone.
+    expect(out.fusion.decision).toBe(DECISION.REJECT);
+    expect(out.fusion.gates).toContain('document_tampered');
     expect(out.fusion.rationale).toMatch(/date of birth/i);
   });
 
@@ -282,7 +284,10 @@ describe('SIH demonstration scenarios (synthetic, deterministic)', () => {
     expect(out.face.match).toBe(false);
     expect(out.fusion.correlations.map((c) => c.id)).toContain('corr:photo_face');
     expect(out.fusion.decision).toBe(DECISION.REJECT);
-    expect(out.fusion.gates).toEqual(expect.arrayContaining(['biometric_mismatch']));
+    // The portrait anomaly and the face mismatch corroborate each other, so the authenticity
+    // determination concludes the photograph was replaced and that gate decides first.
+    expect(out.authenticity.status).toBe('tampered');
+    expect(out.fusion.gates).toEqual(expect.arrayContaining(['document_tampered']));
   });
 
   it('EXPIRED + WATCHLIST: an expired document matching the synthetic list reaches REJECT', async () => {

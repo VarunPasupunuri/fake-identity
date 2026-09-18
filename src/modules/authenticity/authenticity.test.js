@@ -394,3 +394,168 @@ describe('the pipeline produces an authenticity result for every scenario', () =
     expect([AUTHENTICITY.ORIGINAL, AUTHENTICITY.NO_INDICATORS, AUTHENTICITY.INSUFFICIENT]).toContain(out.authenticity.status);
   }, 30000);
 });
+
+/* ------------------------------------------------------------------ */
+describe('one document, one screening, whichever way it arrived', () => {
+  const IMG = 'data:image/png;base64,iVBORw0KGgo=';
+  const run = (opts) => runScreening({ documentType: 'passport', documentImage: IMG, options: { useMock: true, scenario: 'clean_passport', ...opts } }, { log: () => {} });
+
+  it('camera and file upload produce the same analysis of the same document', async () => {
+    const camera = await run({ inputSource: 'camera' });
+    const upload = await run({ inputSource: 'upload' });
+    expect(camera.authenticity.status).toBe(upload.authenticity.status);
+    expect(camera.authenticity.score).toBe(upload.authenticity.score);
+    expect(camera.fusion.decision).toBe(upload.fusion.decision);
+    // Only the recorded input method differs.
+    expect(camera.inputSource).toBe('camera');
+    expect(upload.inputSource).toBe('upload');
+  }, 30000);
+
+  it('runs the whole pipeline with no photo of the person at all', async () => {
+    const out = await run({});
+    expect(out.ocr).toBeTruthy();
+    expect(out.classification).toBeTruthy();
+    expect(out.validation).toBeTruthy();
+    expect(out.tampering).toBeTruthy();
+    expect(out.authenticity).toBeTruthy();
+    expect(out.fusion.decision).toBeTruthy();
+    // The face check reports itself as skipped, not as a failure.
+    expect(out.steps.face.status).toBe('skipped');
+  }, 30000);
+
+  it('a tampered document is still detected without a photo of the person', async () => {
+    const out = await runScreening({ documentType: 'passport', documentImage: IMG, options: { useMock: true, scenario: 'tampered_dob' } }, { log: () => {} });
+    expect(out.authenticity.status).toBe(AUTHENTICITY.TAMPERED);
+    expect(out.fusion.decision).toBe('reject');
+  }, 30000);
+});
+
+/* ------------------------------------------------------------------ */
+describe('the verdict sentence names the finding', () => {
+  it('names the altered field rather than restating the status', () => {
+    expect(analyse(passportOcr({ dateOfBirth: '2006-11-05' })).summary)
+      .toBe('Date of birth was altered: the printed value conflicts with the machine readable zone.');
+    expect(analyse(passportOcr({ documentNumber: 'X7654321' })).summary)
+      .toMatch(/^Document number was altered/);
+  });
+
+  it('is a single sentence for an unaltered document', () => {
+    expect(analyse(passportOcr()).summary)
+      .toBe('Document fields are consistent and no significant manipulation indicators were detected.');
+  });
+
+  it('says plainly when there is not enough to go on', () => {
+    const r = determineAuthenticity({ documentType: 'passport', ocr: { confidence: 0.1, rawText: '#', fields: {}, vizFields: {}, mrz: null }, tampering: null });
+    expect(r.summary).toMatch(/^Insufficient reliable evidence to determine document authenticity/);
+  });
+
+  it('does not call a document original when the analysis was incomplete', () => {
+    expect(analyse(passportOcr({}, { mrz: null })).summary).toMatch(/could not be read, so the printed fields could not be cross-checked/);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+describe('coverage is measured against what the document type allows', () => {
+  it('a document type with no MRZ is not held down for lacking one', () => {
+    const r = determineAuthenticity({
+      documentType: 'birth_certificate',
+      ocr: { confidence: 0.9, rawText: 'BIRTH CERTIFICATE '.repeat(12), fields: { fullName: 'AARAV DEMO', registrationNumber: 'BR-DEMO-1', dateOfBirth: '2016-05-20', documentNumber: 'BR-DEMO-1' }, vizFields: {}, mrz: null },
+      tampering: CLEAN_IMAGE,
+      barcode: { status: 'detected', codes: [{ rawValue: JSON.stringify({ registrationNumber: 'BR-DEMO-1', name: 'AARAV DEMO', dob: '2016-05-20' }) }] },
+    });
+    expect(r.coverageApplicable.mrzIntegrity).toBe(false);
+    expect(r.coverage).toBeGreaterThan(0.9);
+    expect(r.status).toBe(AUTHENTICITY.ORIGINAL);
+  });
+
+  it('cross-checks a QR payload against the printed fields', () => {
+    const r = determineAuthenticity({
+      documentType: 'birth_certificate',
+      ocr: { confidence: 0.9, rawText: 'BIRTH CERTIFICATE '.repeat(12), fields: { fullName: 'AARAV DEMO', dateOfBirth: '2016-05-20', documentNumber: 'BR-DEMO-1' }, vizFields: {}, mrz: null },
+      tampering: CLEAN_IMAGE,
+      // The code disagrees with the printed date of birth.
+      barcode: { status: 'detected', codes: [{ rawValue: JSON.stringify({ registrationNumber: 'BR-DEMO-1', name: 'AARAV DEMO', dob: '2016-05-22' }) }] },
+    });
+    expect(r.status).toBe(AUTHENTICITY.TAMPERED);
+    expect(r.summary).toMatch(/conflicts with the QR \/ barcode/);
+  });
+
+  it('a free-text QR payload carries no comparable fields and never creates a mismatch', () => {
+    const r = determineAuthenticity({
+      documentType: 'birth_certificate',
+      ocr: { confidence: 0.9, rawText: 'BIRTH CERTIFICATE '.repeat(12), fields: { fullName: 'AARAV DEMO', dateOfBirth: '2016-05-20', documentNumber: 'BR-DEMO-1' }, vizFields: {}, mrz: null },
+      tampering: CLEAN_IMAGE,
+      barcode: { status: 'detected', codes: [{ rawValue: 'https://verify.example/record/BR-DEMO-1' }] },
+    });
+    expect(r.status).not.toBe(AUTHENTICITY.TAMPERED);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+describe('the system decision follows the authenticity finding', () => {
+  const IMG = 'data:image/png;base64,iVBORw0KGgo=';
+
+  it('TAMPERED → REJECT', async () => {
+    const out = await runScreening({ documentType: 'passport', documentImage: IMG, liveImage: IMG, options: { useMock: true, scenario: 'tampered_dob' } }, { log: () => {} });
+    expect(out.authenticity.status).toBe(AUTHENTICITY.TAMPERED);
+    expect(out.fusion.decision).toBe('reject');
+    expect(out.fusion.gates).toContain('document_tampered');
+  }, 30000);
+
+  it('INSUFFICIENT EVIDENCE → never approve', async () => {
+    const out = await runScreening({ documentType: 'passport', documentImage: IMG, liveImage: IMG, options: { useMock: true, scenario: 'insufficient_evidence' } }, { log: () => {} });
+    expect(out.authenticity.status).toBe(AUTHENTICITY.INSUFFICIENT);
+    expect(out.fusion.decision).not.toBe('approve');
+  }, 30000);
+
+  it('nothing found but an incomplete analysis is never an automatic approval', () => {
+    // no_indicators must not be waved through: the gate exists for exactly this case.
+    const r = analyse(passportOcr({}, { mrz: null }));
+    expect(r.status).toBe(AUTHENTICITY.NO_INDICATORS);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+describe('photo replacement needs two independent methods', () => {
+  const PHOTO = { x: 0.05, y: 0.2, w: 0.28, h: 0.5 };
+  const photoFlag = { score: 40, provider: 'local-ela', evidence: {}, flags: [{ id: 'ela_0', type: 'photo_replacement', severity: 'medium', label: 'Possible photo replacement', detail: '3.6σ above average', region: PHOTO }] };
+  const NO_MATCH = { similarity: 0.29, match: false, status: 'no_match' };
+
+  it('forensics on the portrait alone is not enough', () => {
+    const r = analyse(passportOcr(), { tampering: photoFlag });
+    expect(r.status).not.toBe(AUTHENTICITY.TAMPERED);
+  });
+
+  it('a face mismatch alone is not enough', () => {
+    const r = analyse(passportOcr(), { face: NO_MATCH });
+    expect(r.status).not.toBe(AUTHENTICITY.TAMPERED);
+  });
+
+  it('both together are photo replacement', () => {
+    const r = analyse(passportOcr(), { tampering: photoFlag, face: NO_MATCH });
+    expect(r.status).toBe(AUTHENTICITY.TAMPERED);
+    expect(r.correlations.some((c) => c.field === 'photo')).toBe(true);
+    expect(r.summary).toMatch(/portrait appears to have been replaced/i);
+  });
+});
+
+describe('an unreadable document is never called clean', () => {
+  it('cannot claim "no tampering indicators" when no text could be read', () => {
+    const r = determineAuthenticity({
+      documentType: 'generic_document',
+      ocr: { confidence: 0.16, rawText: '### ####  ##\n#   #\n.. ,,  ;;\n##########\n#  ##   #', fields: {}, vizFields: {}, mrz: null },
+      tampering: CLEAN_IMAGE,
+    });
+    expect(r.status).toBe(AUTHENTICITY.INSUFFICIENT);
+    expect(r.score).toBeNull();
+  });
+
+  it('and is not called tampered either', () => {
+    const r = determineAuthenticity({
+      documentType: 'generic_document',
+      ocr: { confidence: 0.16, rawText: '#'.repeat(40), fields: {}, vizFields: {}, mrz: null },
+      tampering: CLEAN_IMAGE,
+    });
+    expect(r.status).not.toBe(AUTHENTICITY.TAMPERED);
+  });
+});
