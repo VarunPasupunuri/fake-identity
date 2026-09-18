@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import { determineAuthenticity, AUTHENTICITY, INDICATOR, CATEGORY, SEVERITY, INDICATOR_STATUS, compareRepresentations, AUTH } from './index.js';
 import { checksumIndicators } from './consistency.js';
-import { tamperChecklist, tamperRegions, CHECK_STATUS, TAMPER_CHECKS } from './report.js';
+import { tamperChecklist, tamperRegions, finalVerdict, VERDICT, CHECK_STATUS, TAMPER_CHECKS } from './report.js';
 import { analysePixels } from '../tampering/analysis.js';
 import { toGray, copyMove, aspectAnomaly, outliers, tile, noiseResidual } from '../tampering/forensics.js';
 import { buildTd3, parseMrz } from '../validation/mrz.js';
@@ -792,5 +792,79 @@ describe('issuer verification is only ever claimed when it was performed', () =>
   it('a missing issuer result is not silently treated as a pass', () => {
     expect(issuerStatusLabel(null)).toMatch(/not verified/i);
     expect(issuerStatusLabel(undefined)).toMatch(/not verified/i);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* The final screen shows two outcomes and one sentence.                */
+/* ------------------------------------------------------------------ */
+describe('the final verdict is binary', () => {
+  const PHOTO_REGION = { x: 0.06, y: 0.25, w: 0.24, h: 0.42 };
+  const photoFlag = { score: 40, provider: 'local-ela', evidence: {}, flags: [{ id: 'ela_0', type: 'photo_replacement', severity: 'medium', label: 'Possible photo replacement', detail: 'x', region: PHOTO_REGION, field: 'photo' }] };
+
+  it('an unaltered document is ORIGINAL / REAL with no boxes drawn', () => {
+    const v = finalVerdict(analyse(passportOcr()));
+    expect(v.headline).toBe(VERDICT.ORIGINAL);
+    expect(v.tampered).toBe(false);
+    expect(v.regions).toEqual([]);
+  });
+
+  it('an altered document is TAMPERED / FAKE and boxes the region it found', () => {
+    const v = finalVerdict(analyse(passportOcr({ dateOfBirth: '2006-11-05' })));
+    expect(v.headline).toBe(VERDICT.TAMPERED);
+    expect(v.regions.length).toBeGreaterThan(0);
+    for (const b of v.regions) for (const k of ['x', 'y', 'w', 'h']) expect(typeof b[k]).toBe('number');
+  });
+
+  it('every box is red, whatever severity the indicator carried', () => {
+    const cases = [
+      analyse(passportOcr({ dateOfBirth: '2006-11-05' })),
+      analyse(passportOcr({ documentNumber: 'X7654321' })),
+      analyse(passportOcr(), { tampering: photoFlag, face: { similarity: 0.29, match: false, status: 'no_match' } }),
+    ];
+    for (const r of cases) {
+      const v = finalVerdict(r);
+      expect(v.regions.length).toBeGreaterThan(0);
+      expect(v.regions.every((b) => b.tone === 'high')).toBe(true);
+    }
+  });
+
+  it('there is no third outcome: every state lands on one of the two', () => {
+    const states = [
+      analyse(passportOcr()),                                                   // original
+      analyse(passportOcr({ dateOfBirth: '2006-11-05' })),                      // tampered
+      determineAuthenticity({ documentType: 'passport', ocr: passportOcr(), tampering: null }), // no indicators
+      determineAuthenticity({ documentType: 'passport', ocr: null, tampering: null }),          // insufficient
+    ];
+    for (const r of states) expect([VERDICT.ORIGINAL, VERDICT.TAMPERED]).toContain(finalVerdict(r).headline);
+  });
+
+  it('only a positive tampering finding produces TAMPERED / FAKE', () => {
+    // An unreadable capture is not an accusation: it reads ORIGINAL / REAL, and the
+    // sentence says the document could not be read rather than claiming it is clean.
+    const blur = determineAuthenticity({ documentType: 'passport', ocr: { confidence: 0.18, rawText: '#'.repeat(40), fields: {}, vizFields: {}, mrz: null }, tampering: CLEAN_IMAGE });
+    const v = finalVerdict(blur);
+    expect(v.headline).toBe(VERDICT.ORIGINAL);
+    expect(v.regions).toEqual([]);
+    expect(v.reason).toMatch(/insufficient|could not be read/i);
+    expect(v.reason).not.toMatch(/no significant manipulation indicators were detected\.$/);
+
+    // Forensics or metadata on their own likewise never reach the tampered screen.
+    for (const weak of [{ tampering: elaFlag({ x: 0.4, y: 0.44, w: 0.2, h: 0.08 }, 'high') }, { tampering: photoFlag }]) {
+      expect(finalVerdict(analyse(passportOcr(), weak)).headline).toBe(VERDICT.ORIGINAL);
+    }
+  });
+
+  it('the reason is a single sentence', () => {
+    for (const r of [analyse(passportOcr()), analyse(passportOcr({ dateOfBirth: '2006-11-05' })), determineAuthenticity({ documentType: 'passport', ocr: null, tampering: null })]) {
+      const { reason } = finalVerdict(r);
+      expect(reason.trim()).toMatch(/\.$/);
+      expect(reason.trim().replace(/\.$/, '').split('. ')).toHaveLength(1);
+    }
+  });
+
+  it('carries no score, no risk and no field data', () => {
+    const v = finalVerdict(analyse(passportOcr({ dateOfBirth: '2006-11-05' })));
+    expect(Object.keys(v).sort()).toEqual(['headline', 'reason', 'regions', 'tampered']);
   });
 });

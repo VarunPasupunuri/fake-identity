@@ -1,23 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { Check, FlaskConical, FileImage, ScanFace, ListChecks, Gauge, RotateCcw, ExternalLink } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { FlaskConical, FileImage, ScanFace, ListChecks, Gauge, RotateCcw, ExternalLink } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useSettings } from '../context/SettingsContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { useScreeningPipeline } from '../hooks/useScreeningPipeline.js';
 import { useDocumentPreflight } from '../hooks/useDocumentPreflight.js';
-import { createScreening, recordDecision, listIdentityHistory } from '../services/screenings.js';
+import { createScreening, listIdentityHistory } from '../services/screenings.js';
 import DocumentUpload from '../components/screening/DocumentUpload.jsx';
 import LivePhotoCapture from '../components/screening/LivePhotoCapture.jsx';
 import ProcessingSteps from '../components/screening/ProcessingSteps.jsx';
 import VerdictView from '../components/screening/VerdictView.jsx';
-import DecisionBar from '../components/screening/DecisionBar.jsx';
 import { PageHeader } from '../components/ui/index.jsx';
 import { resolveProviders } from '../modules/registry.js';
 import { resolveSelection, getProfile, AUTO_DETECT } from '../modules/documents/registry.js';
 import { DEMO_DOCUMENTS } from '../modules/documents/fixtures.js';
 import { SCENARIO_OPTIONS, scenarioProfile } from '../modules/documents/scenarios.js';
-import { cx, caseId } from '../lib/format.js';
+import { cx } from '../lib/format.js';
 
 /**
  * One document, one screening. The document is provided EITHER by camera capture
@@ -38,7 +37,6 @@ export default function ScreeningPage() {
   const { user } = useAuth();
   const { settings } = useSettings();
   const toast = useToast();
-  const navigate = useNavigate();
   const pipeline = useScreeningPipeline();
   const [step, setStep] = useState(0);
   const [documentType, setDocumentType] = useState(AUTO_DETECT);
@@ -50,7 +48,6 @@ export default function ScreeningPage() {
   const [history, setHistory] = useState([]);
   const [screeningId, setScreeningId] = useState(null);
   const [saveError, setSaveError] = useState('');
-  const [decided, setDecided] = useState(null);
   const startedRef = useRef(false);
   const providers = resolveProviders(useMock ? { useMock: true, providers: settings.providers } : { providers: settings.providers });
   // A manually selected type whose profile has no holder photograph skips the live-photo step entirely.
@@ -94,15 +91,7 @@ export default function ScreeningPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const decide = async ({ decision, note }) => {
-    if (!screeningId) return;
-    await recordDecision(screeningId, { decision, note });
-    setDecided(decision);
-    toast.success(`Decision recorded: ${decision}`, 'Saved to the audit trail.');
-    setTimeout(() => navigate(`/history/${screeningId}`), 700);
-  };
-
-  const restart = () => { pipeline.reset(); preflight.reset(); startedRef.current = false; setStep(0); setDocImage(null); setLiveImage(null); setScreeningId(null); setDecided(null); setSaveError(''); };
+  const restart = () => { pipeline.reset(); preflight.reset(); startedRef.current = false; setStep(0); setDocImage(null); setLiveImage(null); setScreeningId(null); setSaveError(''); };
   // The document alone is enough to screen. Adding a photo of the person is a
   // separate, explicit choice, not a gate in front of the result.
   const afterDocument = () => { if (preflight.blocking) return; return start(); };
@@ -142,18 +131,14 @@ export default function ScreeningPage() {
         {step === 1 && <div className="animate-fade-in"><LivePhotoCapture image={liveImage} onImage={setLiveImage} onBack={() => setStep(0)} onNext={start} showGuide={settings.captureGuide} /></div>}
         {step === 2 && <div className="animate-fade-in"><ProcessingSteps steps={pipeline.steps} providers={providers} documentImage={docImage?.dataUrl} /></div>}
         {step === 3 && pipeline.results && (
-          <div className="animate-fade-in space-y-5">
+          <div className="animate-fade-in space-y-6">
             {saveError && <div className="alert alert-danger">{saveError}</div>}
-            <VerdictView results={pipeline.results} images={{ document: docImage?.dataUrl, live: liveImage?.dataUrl }} linkBase="/history" caseRef={screeningId ? caseId({ id: screeningId, createdAt: new Date().toISOString() }) : 'Saving case…'}>
-              {decided ? (
-                <div className="flex items-center gap-2 rounded-md hairline px-3 py-3 text-sm font-medium status-ok"><Check className="h-4 w-4" aria-hidden="true" />Decision recorded — opening case…</div>
-              ) : (
-                <DecisionBar recommendation={pipeline.results.risk?.recommendation} aiDecision={pipeline.results.fusion?.decision} onDecide={decide} busy={!screeningId} />
-              )}
-            </VerdictView>
-            <div className="flex flex-wrap items-center justify-between gap-3 pb-20 lg:pb-0">
+            <VerdictView results={pipeline.results} images={{ document: docImage?.dataUrl }} />
+            {/* Navigation only. The officer records the decision on the saved case,
+                so the result screen itself carries nothing but the verdict. */}
+            <div className="flex flex-wrap items-center justify-center gap-3 pb-20 lg:pb-0">
               <button type="button" className="btn-secondary" onClick={restart}><RotateCcw className="h-4 w-4" aria-hidden="true" />Screen another document</button>
-              <p className="t-caption tabular">{typeof pipeline.results.durationMs === 'number' ? `Verification completed in ${(pipeline.results.durationMs / 1000).toFixed(1)} s` : ''}</p>
+              {screeningId && <Link to={`/history/${screeningId}`} className="btn-ghost">Open case</Link>}
             </div>
           </div>
         )}

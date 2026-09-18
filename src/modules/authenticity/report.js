@@ -7,6 +7,7 @@
  * produced.
  */
 import { INDICATOR, INDICATOR_STATUS, SEVERITY_RANK, SEVERITY } from './indicators.js';
+import { AUTHENTICITY } from './index.js';
 
 /** True when the named fields were actually read from two representations and compared. */
 const comparedAny = (a, keys) => (a?.compared || []).some((c) => keys.includes(c.field) && c.status !== 'not_compared');
@@ -113,4 +114,42 @@ export function tamperRegions(authenticity) {
 /** One short line per failing check, for the summary under the verdict. */
 export function failedChecks(authenticity) {
   return tamperChecklist(authenticity).filter((c) => c.status === CHECK_STATUS.FAIL);
+}
+
+/* ------------------------------------------------------------------ */
+/* FINAL VERDICT — the two-outcome projection shown to the evaluator.   */
+/* ------------------------------------------------------------------ */
+
+export const VERDICT = Object.freeze({ ORIGINAL: 'ORIGINAL / REAL', TAMPERED: 'TAMPERED / FAKE' });
+
+/**
+ * Collapse the engine's four states into the two the final screen shows.
+ *
+ * Only a positive TAMPERED determination — evidence the engine judged serious
+ * enough to accuse the document — produces TAMPERED / FAKE. Everything else,
+ * including an analysis that could not run, reads ORIGINAL / REAL, because a
+ * document is not fake merely because it could not be examined.
+ *
+ * That collapse loses a real distinction: "examined and clean" and "could not
+ * be examined" both land on ORIGINAL / REAL. The reason sentence is where the
+ * difference survives — it comes from the engine's own summary, so a capture
+ * that could not be read says so instead of claiming a clean bill of health.
+ *
+ * Nothing here is document-specific: the verdict follows the indicator list,
+ * and the sentence is whatever the engine derived from the evidence it had.
+ *
+ * @param {Object|null} authenticity  result of determineAuthenticity()
+ * @returns {{ tampered: boolean, headline: string, reason: string, regions: Object[] }}
+ */
+export function finalVerdict(authenticity) {
+  const tampered = authenticity?.status === AUTHENTICITY.TAMPERED;
+  // Every highlighted region is drawn in one colour: this screen has a single
+  // meaning for a box, so a severity palette would only invite interpretation.
+  const regions = tampered ? tamperRegions(authenticity).map((r) => ({ ...r, tone: 'high' })) : [];
+  return {
+    tampered,
+    headline: tampered ? VERDICT.TAMPERED : VERDICT.ORIGINAL,
+    reason: authenticity?.summary || 'No analysis was produced for this document.',
+    regions,
+  };
 }
