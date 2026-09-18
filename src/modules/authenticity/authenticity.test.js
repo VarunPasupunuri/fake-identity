@@ -15,6 +15,7 @@ import { tamperChecklist, tamperRegions, CHECK_STATUS, TAMPER_CHECKS } from './r
 import { analysePixels } from '../tampering/analysis.js';
 import { toGray, copyMove, aspectAnomaly, outliers, tile, noiseResidual } from '../tampering/forensics.js';
 import { buildTd3, parseMrz } from '../validation/mrz.js';
+import { runIssuerVerification, issuerStatusLabel } from '../issuer/index.js';
 import { runScreening } from '../../services/screeningPipeline.js';
 
 /* ------------------------------------------------------------------ */
@@ -650,5 +651,146 @@ describe('tamper location', () => {
     const r = analyse(passportOcr({ dateOfBirth: '2006-11-05' }), { tampering: elaFlag(REGION) });
     const labels = tamperRegions(r).map((b) => b.label);
     expect(new Set(labels).size).toBe(labels.length);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* SIH PS-26188 — one named regression per case the result must handle. */
+/*                                                                      */
+/* Each case asserts the two things an evaluator reads: which of the    */
+/* three outcomes was reached, and which checklist rows carry it. A row */
+/* that fails must be the row that matches the evidence — a finding     */
+/* that smears across unrelated rows is as wrong as a missed one.       */
+/* ------------------------------------------------------------------ */
+describe('SIH regression cases', () => {
+  const rows = (r) => Object.fromEntries(tamperChecklist(r).map((c) => [c.id, c.status]));
+  const failing = (r) => tamperChecklist(r).filter((c) => c.status === CHECK_STATUS.FAIL).map((c) => c.id);
+
+  const DOB_REGION = { x: 0.4, y: 0.44, w: 0.2, h: 0.08 };
+  const PHOTO_REGION = { x: 0.06, y: 0.25, w: 0.24, h: 0.42 };
+  const photoFlag = { score: 40, provider: 'local-ela', evidence: {}, flags: [{ id: 'ela_0', type: 'photo_replacement', severity: 'medium', label: 'Possible photo replacement', detail: 'above the document average', region: PHOTO_REGION, field: 'photo' }] };
+  const FACE_MISMATCH = { similarity: 0.29, match: false, status: 'no_match' };
+
+  it('ORIGINAL: an unaltered document passes every applicable check and highlights nothing', () => {
+    const r = analyse(passportOcr());
+    expect(r.status).toBe(AUTHENTICITY.ORIGINAL);
+    expect(failing(r)).toEqual([]);
+    expect(tamperRegions(r)).toEqual([]);
+    expect(r.score).toBeGreaterThanOrEqual(AUTH.ORIGINAL_SCORE);
+  });
+
+  it('TAMPERED — date of birth: only the date row fails, and the box is on the DOB', () => {
+    const r = analyse(passportOcr({ dateOfBirth: '2006-11-05' }), { tampering: elaFlag(DOB_REGION) });
+    expect(r.status).toBe(AUTHENTICITY.TAMPERED);
+    expect(failing(r)).toContain('date_modification');
+    expect(failing(r)).not.toContain('field_modification');
+    expect(tamperRegions(r).some((b) => b.label === 'DOB field — suspected modification')).toBe(true);
+  });
+
+  it('TAMPERED — text: a localised edit fails the text row without touching the field rows', () => {
+    const r = analyse(passportOcr({ dateOfBirth: '2006-11-05' }), { tampering: elaFlag({ x: 0.5, y: 0.12, w: 0.2, h: 0.09 }) });
+    const f = failing(r);
+    expect(f).toContain('text_manipulation');
+    expect(f).not.toContain('metadata');
+    expect(f).not.toContain('stamp_forgery');
+  });
+
+  it('TAMPERED — photograph: the verdict needs two independent methods, the row reports one', () => {
+    const severity = (r) => tamperChecklist(r).find((c) => c.id === 'photo_replacement').severity;
+
+    // Forensics over the portrait is a real observation, so the row reports it —
+    // but at MEDIUM, and it does not on its own move the document to TAMPERED.
+    const alone = analyse(passportOcr(), { tampering: photoFlag });
+    expect(failing(alone)).toContain('photo_replacement');
+    expect(severity(alone)).toBe(SEVERITY.MEDIUM);
+    expect(alone.status).not.toBe(AUTHENTICITY.TAMPERED);
+    expect(alone.indicators.some((i) => i.id === INDICATOR.PHOTO_REPLACEMENT_CORROBORATED)).toBe(false);
+
+    // The face check agreeing with it is the second method: now it is a finding.
+    const both = analyse(passportOcr(), { tampering: photoFlag, face: FACE_MISMATCH });
+    expect(both.status).toBe(AUTHENTICITY.TAMPERED);
+    expect(severity(both)).toBe(SEVERITY.HIGH);
+    expect(both.indicators.some((i) => i.id === INDICATOR.PHOTO_REPLACEMENT_CORROBORATED)).toBe(true);
+    expect(tamperRegions(both).some((b) => /Portrait/.test(b.label))).toBe(true);
+  });
+
+  it('MRZ mismatch: a failing check digit fails the code-consistency row alone', () => {
+    const broken = { ...MRZ, lines: [MRZ.lines[0], `${MRZ.lines[1].slice(0, 9)}9${MRZ.lines[1].slice(10)}`] };
+    const r = analyse(passportOcr({}, { mrz: broken }));
+    expect(rows(r).code_consistency).toBe(CHECK_STATUS.FAIL);
+    expect(rows(r).image_forensics).toBe(CHECK_STATUS.PASS);
+    expect(rows(r).metadata).toBe(CHECK_STATUS.PASS);
+  });
+
+  it('document-number mismatch: fails the identity-field row, not the date row', () => {
+    const r = analyse(passportOcr({ documentNumber: 'X7654321' }));
+    expect(r.status).toBe(AUTHENTICITY.TAMPERED);
+    expect(failing(r)).toEqual(['field_modification']);
+    expect(tamperRegions(r).some((b) => b.label === 'Document number — suspected modification')).toBe(true);
+  });
+
+  it('poor-quality image: nothing is claimed in either direction', () => {
+    const r = determineAuthenticity({ documentType: 'passport', ocr: { confidence: 0.18, rawText: '#'.repeat(40), fields: {}, vizFields: {}, mrz: null }, tampering: CLEAN_IMAGE });
+    expect(r.status).toBe(AUTHENTICITY.INSUFFICIENT);
+    expect(r.score).toBeNull();
+    expect(failing(r)).toEqual([]);
+    expect(tamperRegions(r)).toEqual([]);
+    // Blur is not an accusation: the read-dependent rows abstain rather than fail.
+    expect(rows(r).code_consistency).toBe(CHECK_STATUS.NOT_APPLICABLE);
+    expect(rows(r).structure).toBe(CHECK_STATUS.NOT_APPLICABLE);
+  });
+
+  it('insufficient evidence: no score is manufactured when too little ran', () => {
+    const r = determineAuthenticity({ documentType: 'passport', ocr: null, tampering: null, face: null });
+    expect(r.status).toBe(AUTHENTICITY.INSUFFICIENT);
+    expect(r.score).toBeNull();
+    expect(failing(r)).toEqual([]);
+  });
+
+  it('the checklist never reports a failure the indicators did not produce', () => {
+    for (const r of [analyse(passportOcr()), analyse(passportOcr({ dateOfBirth: '2006-11-05' })), determineAuthenticity({ documentType: 'passport', ocr: null, tampering: null })]) {
+      const detected = new Set((r.indicators || []).filter((i) => i.status === INDICATOR_STATUS.DETECTED).map((i) => i.id));
+      for (const row of tamperChecklist(r)) {
+        if (row.status === CHECK_STATUS.FAIL) {
+          expect(TAMPER_CHECKS.find((c) => c.id === row.id).ids.some((id) => detected.has(id))).toBe(true);
+        }
+      }
+    }
+  });
+});
+
+/* ------------------------------------------------------------------ */
+describe('issuer verification is only ever claimed when it was performed', () => {
+  it('says plainly that nothing was verified when no source is configured', async () => {
+    const label = issuerStatusLabel(await runIssuerVerification({ provider: 'unavailable' }));
+    expect(label).toMatch(/not verified with the issuing authority/i);
+    expect(label).not.toMatch(/confirmed/i);
+  });
+
+  it('a synthetic demo match never reads as an authorised confirmation', async () => {
+    const out = await runIssuerVerification({ provider: 'synthetic', documentType: 'passport', fields: { documentNumber: 'M8412345', fullName: 'ANITA SHARMA', dateOfBirth: '1988-04-12' } });
+    expect(out.status).toBe('verified');
+    expect(out.synthetic).toBe(true);
+    expect(issuerStatusLabel(out)).toMatch(/synthetic demonstration register/i);
+    // It must read as a denial of authorised verification, never as one.
+    expect(issuerStatusLabel(out)).toMatch(/not an authorised issuer source/i);
+    expect(issuerStatusLabel(out)).not.toMatch(/^Confirmed/);
+  });
+
+  it('absence from a register is reported as absence, not as forgery', async () => {
+    const label = issuerStatusLabel(await runIssuerVerification({ provider: 'synthetic', documentType: 'passport', fields: { documentNumber: 'NOSUCH99' } }));
+    expect(label).toMatch(/no matching record/i);
+    expect(label).toMatch(/not evidence of forgery/i);
+  });
+
+  it('the external placeholder claims nothing, because it is not connected', async () => {
+    const out = await runIssuerVerification({ provider: 'external', documentType: 'passport', fields: { documentNumber: 'X1234567' } });
+    expect(out.status).toBe('unavailable');
+    expect(issuerStatusLabel(out)).not.toMatch(/confirmed/i);
+  });
+
+  it('a missing issuer result is not silently treated as a pass', () => {
+    expect(issuerStatusLabel(null)).toMatch(/not verified/i);
+    expect(issuerStatusLabel(undefined)).toMatch(/not verified/i);
   });
 });

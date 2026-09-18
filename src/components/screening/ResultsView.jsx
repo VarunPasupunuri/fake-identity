@@ -4,6 +4,7 @@ import { Card, RiskBadge, Badge, StatusIcon, AnnotatedImage, ProgressBar, Tabs }
 import { FIELD_LABELS } from '../../modules/validation/rules.js';
 import { DOCUMENT_TYPE_LABEL } from '../../modules/types.js';
 import { getProfile, expectedFieldKeys } from '../../modules/documents/registry.js';
+import { issuerStatusLabel } from '../../modules/issuer/index.js';
 import { DATE_FIELD_KEYS, IDENTIFIER_FIELD_KEYS } from '../../modules/documents/fields.js';
 import { formatDate, cx, RISK_STYLES } from '../../lib/format.js';
 import { DecisionPanel, WhyPanel, EvidenceFusionPanel, CorrelationsPanel, EvidenceChainPanel, CounterfactualPanel } from './FusionPanels.jsx';
@@ -26,7 +27,7 @@ const HIDDEN_FIELDS = new Set(['marks', 'subjects']); // rendered as a table, no
  */
 export default function ResultsView({ results, images, children, linkBase = '/history', caseRef }) {
   const inputSource = results.inputSource || null;
-  const { documentType, ocr, validation, tampering, barcode, face, watchlist, identity, risk, fusion, providers, classification, authenticity } = results;
+  const { documentType, ocr, validation, tampering, barcode, face, watchlist, identity, risk, fusion, providers, classification, authenticity, issuer } = results;
   const profile = getProfile(documentType);
   const faceApplies = profile.face !== 'not_applicable';
   const [tab, setTab] = useState('all');
@@ -58,13 +59,16 @@ export default function ResultsView({ results, images, children, linkBase = '/hi
   }
   return (
     <div className="space-y-6">
-      {/* 1. DOCUMENT AUTHENTICITY — what the forensic and field evidence says about the document */}
+      {/* 1. DOCUMENT AUTHENTICITY — what the forensic and field evidence says about the document.
+             The verification line comes from what the issuer module actually returned; the decision
+             must never stand in for it, because a document-level assessment cannot confirm an
+             issuer's record. */}
       <AuthenticityPanel
         authenticity={authenticity}
         risk={fusion?.risk?.score ?? null}
         confidence={fusion?.confidence?.score ?? null}
         documentLabel={profile.label}
-        verificationStatus={fusion?.decision === 'verified' ? 'Confirmed by an authorised issuer source' : 'Not verified with the issuing authority'}
+        verificationStatus={issuerStatusLabel(issuer)}
       />
 
       {/* 2. Assessment, and the officer's decision. Deliberately separate from authenticity:

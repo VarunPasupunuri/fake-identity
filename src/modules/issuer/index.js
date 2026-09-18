@@ -39,3 +39,32 @@ export async function runIssuerVerification({ provider, ...args }) {
   const impl = ISSUER_PROVIDERS[provider] || ISSUER_PROVIDERS.unavailable;
   return impl.verify(args);
 }
+
+/**
+ * One honest line about issuer verification, for display.
+ *
+ * "Confirmed by an authorised issuer source" is a claim about the outside world
+ * and is made ONLY when a non-synthetic issuer provider actually returned a
+ * match. A synthetic demo register says so in its own words, and every other
+ * state — absent, unavailable, not queried — reports that no authorised source
+ * confirmed anything. A document-level assessment can never earn this sentence
+ * on its own, so the decision must never be used to derive it.
+ *
+ * @param {IssuerResult|null|undefined} issuer
+ * @returns {string}
+ */
+export function issuerStatusLabel(issuer) {
+  if (!issuer) return 'Not verified with the issuing authority — no authorised source was consulted.';
+  if (issuer.status === 'verified') {
+    return issuer.synthetic
+      ? 'Matched a synthetic demonstration register — not an authorised issuer source.'
+      : 'Confirmed by an authorised issuer source.';
+  }
+  if (issuer.status === 'mismatch') {
+    return `The record held by the source consulted disagrees with this document (${issuer.source}).`;
+  }
+  if (issuer.status === 'not_found') {
+    return `No matching record at the source consulted (${issuer.source}). Absence is not evidence of forgery.`;
+  }
+  return 'Not verified with the issuing authority — no authorised external data source is connected.';
+}
