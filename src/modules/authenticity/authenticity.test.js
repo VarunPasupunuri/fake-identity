@@ -11,6 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import { determineAuthenticity, AUTHENTICITY, INDICATOR, CATEGORY, SEVERITY, INDICATOR_STATUS, compareRepresentations, AUTH } from './index.js';
 import { checksumIndicators } from './consistency.js';
+import { tamperChecklist, tamperRegions, CHECK_STATUS, TAMPER_CHECKS } from './report.js';
 import { analysePixels } from '../tampering/analysis.js';
 import { toGray, copyMove, aspectAnomaly, outliers, tile, noiseResidual } from '../tampering/forensics.js';
 import { buildTd3, parseMrz } from '../validation/mrz.js';
@@ -557,5 +558,97 @@ describe('an unreadable document is never called clean', () => {
       tampering: CLEAN_IMAGE,
     });
     expect(r.status).not.toBe(AUTHENTICITY.TAMPERED);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+describe('the SIH tampering checklist', () => {
+  const rows = (r) => Object.fromEntries(tamperChecklist(r).map((c) => [c.id, c.status]));
+
+  it('names every check the problem statement asks for', () => {
+    expect(TAMPER_CHECKS.map((c) => c.id)).toEqual([
+      'photo_replacement', 'text_manipulation', 'date_modification', 'field_modification',
+      'stamp_forgery', 'image_forensics', 'metadata', 'code_consistency', 'structure',
+    ]);
+  });
+
+  it('a clean passport passes every applicable check', () => {
+    const r = rows(analyse(passportOcr()));
+    expect(Object.values(r).every((s) => s === CHECK_STATUS.PASS)).toBe(true);
+  });
+
+  it('an altered date of birth fails only the date check', () => {
+    const r = rows(analyse(passportOcr({ dateOfBirth: '2006-11-05' })));
+    expect(r.date_modification).toBe(CHECK_STATUS.FAIL);
+    expect(r.photo_replacement).toBe(CHECK_STATUS.PASS);
+    expect(r.field_modification).toBe(CHECK_STATUS.PASS);
+    expect(r.metadata).toBe(CHECK_STATUS.PASS);
+  });
+
+  it('an altered document number fails only the identity-field check', () => {
+    const r = rows(analyse(passportOcr({ documentNumber: 'X7654321' })));
+    expect(r.field_modification).toBe(CHECK_STATUS.FAIL);
+    expect(r.date_modification).toBe(CHECK_STATUS.PASS);
+  });
+
+  it('a localised text anomaly fails the text-manipulation check alone', () => {
+    const r = rows(analyse(passportOcr(), { tampering: elaFlag({ x: 0.5, y: 0.1, w: 0.2, h: 0.1 }) }));
+    expect(r.text_manipulation).toBe(CHECK_STATUS.FAIL);
+    expect(r.date_modification).toBe(CHECK_STATUS.PASS);
+  });
+
+  it('a metadata editor tag fails only the metadata check', () => {
+    const meta = { score: 45, provider: 'local-ela', evidence: {}, flags: [{ id: 'meta_editor', type: 'metadata', severity: 'high', label: 'Edited with an image editor', detail: 'Software tag present' }] };
+    const r = rows(analyse(passportOcr(), { tampering: meta }));
+    expect(r.metadata).toBe(CHECK_STATUS.FAIL);
+    expect(r.image_forensics).toBe(CHECK_STATUS.PASS);
+  });
+
+  it('distinguishes "could not look" from "looked and found nothing"', () => {
+    // No image forensics at all: the image-based rows are not applicable, not passing.
+    const r = rows(determineAuthenticity({ documentType: 'passport', ocr: passportOcr(), tampering: null, face: FACE_MATCH }));
+    expect(r.image_forensics).toBe(CHECK_STATUS.NOT_APPLICABLE);
+    expect(r.photo_replacement).toBe(CHECK_STATUS.NOT_APPLICABLE);
+    // Field comparison still ran, so those rows are real passes.
+    expect(r.date_modification).toBe(CHECK_STATUS.PASS);
+  });
+
+  it('a poor-quality image compares nothing and passes nothing', () => {
+    const r = rows(determineAuthenticity({ documentType: 'passport', ocr: { confidence: 0.2, rawText: '#'.repeat(40), fields: {}, vizFields: {}, mrz: null }, tampering: CLEAN_IMAGE }));
+    expect(r.date_modification).toBe(CHECK_STATUS.NOT_APPLICABLE);
+    expect(r.field_modification).toBe(CHECK_STATUS.NOT_APPLICABLE);
+    // and nothing is reported as a failure either
+    expect(Object.values(r)).not.toContain(CHECK_STATUS.FAIL);
+  });
+});
+
+describe('tamper location', () => {
+
+  it('points at the date of birth when the date of birth was altered', () => {
+    const boxes = tamperRegions(analyse(passportOcr({ dateOfBirth: '2006-11-05' })));
+    expect(boxes).toHaveLength(1);
+    expect(boxes[0].label).toBe('DOB field — suspected modification');
+    expect(boxes[0].tone).toBe('high');
+    for (const k of ['x', 'y', 'w', 'h']) expect(typeof boxes[0][k]).toBe('number');
+  });
+
+  it('points at the portrait when the portrait was replaced', () => {
+    const PHOTO = { x: 0.05, y: 0.2, w: 0.28, h: 0.5 };
+    const r = analyse(passportOcr(), {
+      tampering: { score: 40, provider: 'local-ela', evidence: {}, flags: [{ id: 'ela_0', type: 'photo_replacement', severity: 'medium', label: 'Possible photo replacement', detail: '3.6σ', region: PHOTO }] },
+      face: { confidence: 29, match: false, documentFaceFound: true, liveFaceFound: true },
+    });
+    expect(tamperRegions(r).some((b) => /Portrait/.test(b.label))).toBe(true);
+  });
+
+  it('draws nothing when nothing was detected', () => {
+    expect(tamperRegions(analyse(passportOcr()))).toHaveLength(0);
+  });
+
+  it('does not draw the same region twice', () => {
+    const REGION = { x: 0.4, y: 0.44, w: 0.2, h: 0.08 };
+    const r = analyse(passportOcr({ dateOfBirth: '2006-11-05' }), { tampering: elaFlag(REGION) });
+    const labels = tamperRegions(r).map((b) => b.label);
+    expect(new Set(labels).size).toBe(labels.length);
   });
 });
