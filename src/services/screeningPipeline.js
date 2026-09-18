@@ -197,5 +197,43 @@ export async function runScreening({ documentType = AUTO_DETECT, documentImage, 
   // Which input method supplied the document. One screening processes one document input.
   out.inputSource = options.inputSource || null;
   out.durationMs = Math.round(now() - startedAt);
+  explain(out);
   return out;
+}
+
+/**
+ * Why the screening concluded what it did, on the console.
+ *
+ * The result screen shows a verdict and one sentence, which is right for an
+ * evaluator and useless when the verdict itself looks wrong. Almost every such
+ * report comes down to one of two things: the machine readable zone was not
+ * read, or the printed field was not read — and either way nothing was compared,
+ * so an altered document has nothing to contradict it. This prints exactly that,
+ * plus the recognised text, so a bad result can be diagnosed from the browser
+ * console instead of guessed at. Also parked on window.__screening for copying.
+ */
+function explain(out) {
+  if (typeof console === 'undefined') return;
+  const a = out.authenticity;
+  const compared = (a?.compared || []).filter((c) => c.status !== 'not_compared');
+  const info = {
+    verdict: a?.status ?? 'none',
+    reason: a?.summary ?? '',
+    mrzRead: out.ocr?.mrz ? `${out.ocr.mrz.format} (${out.ocr.mrzPass ? 'second pass over the MRZ band' : 'page-wide pass'})` : 'NOT READ — nothing to cross-check printed fields against',
+    printedFields: out.ocr?.vizFields || {},
+    mrzFields: out.ocr?.mrz ? out.ocr.fields : {},
+    comparedFields: compared.map((c) => `${c.field}: ${c.status}`),
+    ocrConfidence: out.ocr?.confidence,
+    rawText: out.ocr?.rawText || '',
+  };
+  try { if (typeof window !== 'undefined') window.__screening = { ...info, full: out }; } catch { /* non-browser */ }
+  /* eslint-disable no-console */
+  console.groupCollapsed(`[screening] ${info.verdict} — ${info.reason}`);
+  console.log('MRZ:', info.mrzRead);
+  console.log('Printed (visual zone):', info.printedFields);
+  console.log('Cross-checked:', info.comparedFields.length ? info.comparedFields : 'NOTHING — no field was readable in two places');
+  console.log('OCR confidence:', info.ocrConfidence);
+  console.log('Recognised text:\n' + info.rawText);
+  console.groupEnd();
+  /* eslint-enable no-console */
 }

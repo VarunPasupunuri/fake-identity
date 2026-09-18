@@ -29,8 +29,26 @@ function iso(y, m, d) {
 
 const DATE_RE = '(\\d{1,2}[\\s/.-]+(?:\\d{1,2}|[A-Za-z]{3,9})[\\s/.-]+\\d{2,4}|\\d{4}[/.-]\\d{1,2}[/.-]\\d{1,2})';
 
-/** How many lines below a label a value may sit. Bio pages use one; two absorbs a wrapped label. */
-const VALUE_LOOKAHEAD = 2;
+/**
+ * How far below a label its value may sit, in lines.
+ *
+ * Text values get a short reach. A candidate found further away is more likely
+ * to belong to another field than to this one, and a wrong value is worse than
+ * no value: it is compared against the machine readable zone, so a misread turns
+ * into an accusation against a genuine document.
+ *
+ * Dates get a long one. Some captures come out fully stacked — every label, then
+ * every value — and a date pattern is specific enough that a match several lines
+ * down is still the date belonging to the only date label above it.
+ */
+const TEXT_LOOKAHEAD = 2;
+const DATE_LOOKAHEAD = 8;
+
+/** Words that only ever appear in a label, never in a holder's details. */
+const LABEL_WORDS = /\b(?:SURNAME|FAMILY NAME|LAST NAME|GIVEN NAMES?|FIRST NAMES?|FORENAMES?|NATIONALITY|CITIZENSHIP|DATE OF BIRTH|BIRTH DATE|PLACE OF BIRTH|DATE OF ISSUE|DATE OF EXPIRY|EXPIRY DATE|VALID FROM|VALID UNTIL|VALID TILL|DURATION OF STAY|ISSUING|AUTHORITY|PASSPORT NO|DOCUMENT NO|VISA NO|COUNTRY CODE|SEX|GENDER|TYPE|ENTRIES)\b/i;
+
+/** A row of headings carries no values, so it is never read as one. */
+const isLabelLine = (line) => LABEL_WORDS.test(line);
 
 /** Every match of `valueRe` in one line, with the column it starts at. */
 function candidates(line, valueRe) {
@@ -64,7 +82,7 @@ function candidates(line, valueRe) {
  * keeps the date under "Date of Expiry" from being read as the date of issue
  * printed to its left.
  */
-function grab(text, labels, valueRe = '([A-Z0-9][A-Z0-9 \\-/]{2,40})') {
+function grab(text, labels, valueRe = '([A-Z0-9][A-Z0-9 \\-/]{2,40})', { lookahead = TEXT_LOOKAHEAD, skipLabelLines = false } = {}) {
   const lines = String(text).split(/\r?\n/);
   for (const label of labels) {
     const labelRe = new RegExp(label, 'i');
@@ -77,7 +95,17 @@ function grab(text, labels, valueRe = '([A-Z0-9][A-Z0-9 \\-/]{2,40})') {
       const inline = candidates(tail, valueRe).find((c) => !tail.slice(0, c.at).includes('/'));
       if (inline) return inline.text;
 
-      for (let j = i + 1; j < Math.min(i + 1 + VALUE_LOOKAHEAD, lines.length); j += 1) {
+      let budget = lookahead;
+      for (let j = i + 1; j < lines.length && budget > 0; j += 1) {
+        if (isLabelLine(lines[j])) {
+          // A heading row is not this field's value. For dates it is stepped over,
+          // because a stacked capture puts every heading before any value; for text
+          // it still costs budget, which is what stops a name being read as the
+          // value of the label three rows above it.
+          if (!skipLabelLines) budget -= 1;
+          continue;
+        }
+        budget -= 1;
         const found = candidates(lines[j], valueRe);
         if (!found.length) continue;
         return found.reduce((a, b) => (Math.abs(b.at - column) < Math.abs(a.at - column) ? b : a)).text;
@@ -88,7 +116,7 @@ function grab(text, labels, valueRe = '([A-Z0-9][A-Z0-9 \\-/]{2,40})') {
 }
 
 function grabDate(text, labels) {
-  const v = grab(text, labels, DATE_RE);
+  const v = grab(text, labels, DATE_RE, { lookahead: DATE_LOOKAHEAD, skipLabelLines: true });
   return v ? parseDate(v) : null;
 }
 

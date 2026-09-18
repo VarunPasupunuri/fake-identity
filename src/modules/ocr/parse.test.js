@@ -116,3 +116,56 @@ describe('date formats printed on real documents', () => {
     expect(parseDate('not a date')).toBeNull();
   });
 });
+
+describe('a capture that comes out fully stacked', () => {
+  // Every heading first, then every value. Column position says nothing here,
+  // so only the date — whose pattern is unmistakable — can be placed with confidence.
+  const stacked = [
+    'REPUBLIC OF INDIA',
+    'Surname/ Nom',
+    'Given Name(s)/ Prenom(s)',
+    'Nationality/ Nationalite',
+    'Sex/ Sexe',
+    'Date of Birth/ Date de naissance',
+    'DEMO',
+    'ANITA',
+    'INDIAN',
+    'F',
+    '05/11/2006',
+  ].join('\n');
+
+  it('still finds the printed date of birth', () => {
+    expect(read(stacked).vizFields.dateOfBirth).toBe('2006-11-05');
+  });
+
+  it('invents nothing for the fields it cannot place', () => {
+    // A guessed value is compared against the machine readable zone, so guessing
+    // here would accuse a genuine document. Absent is the honest answer.
+    const { vizFields } = read(stacked);
+    expect(vizFields.nationality).toBeUndefined();
+    expect(vizFields.documentNumber).toBeUndefined();
+    for (const v of Object.values(vizFields)) expect(v).not.toBe('');
+  });
+
+  it('never reads a heading as a value', () => {
+    const { vizFields } = read(stacked);
+    for (const v of Object.values(vizFields)) {
+      expect(String(v)).not.toMatch(/^(SEX|NATIONALITE|PRENOM|NOM|NAISSANCE|TYPE)$/i);
+    }
+  });
+
+  it('catches the altered date of birth on this layout too', () => {
+    const mrz = buildTd3({ docCode: 'P<', issuingCountry: 'IND', surname: 'DEMO', givenNames: 'ANITA', documentNumber: 'X1234567', nationality: 'IND', dateOfBirth: '2006-11-03', gender: 'F', expiryDate: '2031-06-30' });
+    const v = finalVerdict(screen(`${stacked}\n${mrz.lines.join('\n')}`));
+    expect(v.headline).toBe(VERDICT.TAMPERED);
+    expect(v.reason).toMatch(/date of birth/i);
+    expect(v.regions.some((b) => /DOB/.test(b.label))).toBe(true);
+  });
+
+  it('does not accuse the same layout when the date agrees', () => {
+    const mrz = buildTd3({ docCode: 'P<', issuingCountry: 'IND', surname: 'DEMO', givenNames: 'ANITA', documentNumber: 'X1234567', nationality: 'IND', dateOfBirth: '2006-11-05', gender: 'F', expiryDate: '2031-06-30' });
+    const v = finalVerdict(screen(`${stacked}\n${mrz.lines.join('\n')}`));
+    expect(v.headline).toBe(VERDICT.ORIGINAL);
+    expect(v.regions).toEqual([]);
+  });
+});
