@@ -66,7 +66,8 @@ export function extractMrzLines(rawText) {
   const td3 = candidates.filter((l) => l.length >= 40 && l.length <= 80);
   const td3Start = td3.findIndex((l) => /^[PV][A-Z<]/.test(l));
   if (td3Start >= 0 && td3[td3Start + 1]) {
-    return { format: 'TD3', lines: [padTo(td3[td3Start], 44), padTo(td3[td3Start + 1], 44)] };
+    const l1 = padTo(td3[td3Start], 44);
+    return { format: 'TD3', lines: [l1, padTo(realignTd3Line2(td3[td3Start + 1], clean(l1.slice(2, 5))), 44)] };
   }
   // TD1: three lines of 30 starting with I<, A<, C<
   const td1 = candidates.filter((l) => l.length >= 28 && l.length <= 32);
@@ -90,9 +91,36 @@ export function extractMrzLines(rawText) {
  */
 export function normaliseMrzLine(line) {
   let l = line.toUpperCase().replace(/[«»(){}\[\]]/g, '<').replace(/[^A-Z0-9<]/g, '');
-  l = l.replace(/(<)([KLI1]{3,})/g, (m, lt, run) => lt + '<'.repeat(run.length));
-  l = l.replace(/([KLI1]{5,})(?=<|$)/g, (run) => '<'.repeat(run.length));
+  // A run of letters butted against filler, or trailing the line, is filler that was
+  // read as letters. Which letters depends on the typeface and the photograph: K, L,
+  // I and 1 are the usual ones, and S, R, C and E appear on a page read at an angle.
+  l = l.replace(/(<)([KLI1SRCE]{3,})/g, (m, lt, run) => lt + '<'.repeat(run.length));
+  l = l.replace(/([KLI1SRCE]{5,})(?=<|$)/g, (run) => '<'.repeat(run.length));
   return l;
+}
+
+/**
+ * Put the second line back on its true columns.
+ *
+ * Every field in the zone is found by counting characters from the start of the
+ * line, so a character lost at the left edge — a finger over the corner, the page
+ * cropped a little tight — shifts every field along and the whole line parses as
+ * nonsense. The date of birth is read correctly and lands where the document
+ * number is expected, so nothing verifies and nothing can be compared.
+ *
+ * The line carries its own ruler: the three-letter nationality code, which must
+ * sit at column 10 and is already known from the first line. Finding it says how
+ * far the line has slipped. Characters genuinely lost are restored as filler, so
+ * the field that lost them fails its own check digit — which is honest, it was
+ * not read — while every field after it is back where it belongs.
+ */
+export function realignTd3Line2(l2, issuingCountry) {
+  if (!l2 || !/^[A-Z]{3}$/.test(issuingCountry || '')) return l2;
+  if (l2.slice(10, 13) === issuingCountry) return l2;
+  const at = l2.indexOf(issuingCountry);
+  // Only near where it belongs: a country code found elsewhere is a coincidence.
+  if (at < 0 || Math.abs(at - 10) > 4) return l2;
+  return at < 10 ? '<'.repeat(10 - at) + l2 : l2.slice(at - 10);
 }
 
 function padTo(line, n) {

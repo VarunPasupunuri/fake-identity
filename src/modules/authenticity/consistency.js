@@ -193,6 +193,23 @@ export function barcodeFields(barcode) {
 /** MRZ check digits: a stated value that fails its own checksum was not written by the issuer. */
 
 
+
+/** `yymmdd` as the ISO date the printed page would carry. */
+function mrzDateToIsoish(v) {
+  if (!/^\d{6}$/.test(v)) return null;
+  const yy = Number(v.slice(0, 2));
+  return `${yy > 40 ? 19 : 20}${v.slice(0, 2)}-${v.slice(2, 4)}-${v.slice(4, 6)}`;
+}
+
+/** Two strings of equal length differing in at most one character. */
+function oneCharApart(a, b) {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  let seen = 0;
+  for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i] && (seen += 1) > 1) return false;
+  return seen === 1;
+}
+
 /**
  * Whether the machine readable zone was read correctly, judged by the zone itself.
  *
@@ -308,10 +325,15 @@ function narrowByComposite(recovered, mrzParsed, failure) {
  */
 function reconstructionIndicators(mrzParsed, visual, ocrConfidence) {
   const failed = (mrzParsed.checks || []).filter((c) => !c.ok);
-  const fieldFailures = failed.filter((c) => CHECK_FIELD[c.id]);
+  // A field whose value begins with filler lost its leading characters to the edge
+  // of the photograph — a finger over the corner, the page cropped tight. It fails
+  // its check digit because it was not read, not because it was changed, so it is
+  // not counted as a second altered field. Filler at the END is legitimate padding.
+  const unread = (c) => /^</.test(c.value || '');
+  const fieldFailures = failed.filter((c) => CHECK_FIELD[c.id] && !unread(c));
   // More than one edited field, or damage outside the composite, means the zone
   // was probably not read cleanly; that is the ordinary checksum finding, not this.
-  const others = failed.filter((c) => c.id !== 'mrz_composite' && !CHECK_FIELD[c.id]);
+  const others = failed.filter((c) => c.id !== 'mrz_composite' && !CHECK_FIELD[c.id] && !unread(c));
   if (fieldFailures.length !== 1 || others.length) return [];
 
   let recovered = recoverFromCheckDigit(fieldFailures[0]);
@@ -325,8 +347,20 @@ function reconstructionIndicators(mrzParsed, visual, ocrConfidence) {
   // the fragile part: bilingual, and beside a script an English recogniser turns to
   // noise. The date itself is plain digits and survives. Either way the question is
   // the same: do the page and the zone tell the same story?
-  const alsoPrinted = Array.isArray(visual?.dates) && encoded && visual.dates.includes(String(encoded));
-  const agrees = Boolean((printed && encoded && String(printed) === String(encoded)) || alsoPrinted);
+  const dates = Array.isArray(visual?.dates) ? visual.dates : [];
+  const exact = Boolean(printed && encoded && String(printed) === String(encoded)) || (encoded && dates.includes(String(encoded)));
+
+  // A page read poorly enough prints the date one character adrift — 2006 as 2008.
+  // Near enough still corroborates the zone, but only while the page does NOT print
+  // one of the recovered originals exactly. That distinction is what separates the
+  // two explanations: if the zone had merely been misread, the page would carry the
+  // TRUE date, which is among the candidates. A page that instead carries the
+  // ALTERED date, and no candidate, means both were changed together.
+  const isoDates = (recovered.candidates || []).map(mrzDateToIsoish).filter(Boolean);
+  const near = encoded && dates.some((d) => oneCharApart(d, String(encoded)));
+  const printsAnOriginal = isoDates.some((c) => dates.includes(c));
+  const agrees = Boolean(exact || (near && !printsAnOriginal && mrzReadReliably(mrzParsed)));
+  const alsoPrinted = exact || near;
   const label = CHECK_PHRASE[recovered.field] || recovered.field;
   return [indicator({
     id: INDICATOR.MRZ_FIELD_RECONSTRUCTED,

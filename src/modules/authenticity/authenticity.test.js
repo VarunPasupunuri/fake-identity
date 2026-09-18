@@ -14,7 +14,7 @@ import { checksumIndicators, recoverFromCheckDigit } from './consistency.js';
 import { tamperChecklist, tamperRegions, finalVerdict, VERDICT, CHECK_STATUS, TAMPER_CHECKS } from './report.js';
 import { analysePixels } from '../tampering/analysis.js';
 import { toGray, copyMove, aspectAnomaly, outliers, tile, noiseResidual } from '../tampering/forensics.js';
-import { buildTd3, parseMrz } from '../validation/mrz.js';
+import { buildTd3, parseMrz, extractMrzLines } from '../validation/mrz.js';
 import { runIssuerVerification, issuerStatusLabel } from '../issuer/index.js';
 import { runScreening } from '../../services/screeningPipeline.js';
 
@@ -1003,5 +1003,69 @@ describe('the page and the zone telling the same altered story', () => {
     expect(reason).toMatch(/date of birth/i);
     expect(reason).toMatch(/check digit/i);
     expect(reason).not.toMatch(/\d{2}\/\d{2}\/\d{4}/);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* The reported capture, verbatim.                                      */
+/*                                                                      */
+/* The zone below is exactly what recognition returned from the reported */
+/* photograph: filler read as S, L and R, and the leading "AM" of the    */
+/* second line lost to the edge of the frame. The page-level read was    */
+/* poor enough that the printed year came back as 2008 for 2006.         */
+/* ------------------------------------------------------------------ */
+describe('REGRESSION: the reported photograph, as it was actually read', () => {
+  const LINE1 = 'P<INDPASUPUNURI<<VARUNSKUMARS<SLLLLLLLLLLLRL';
+  const zone = (line2) => extractMrzLines(`${LINE1}\n${line2}`);
+  const screen = (line2, dates) => determineAuthenticity({
+    documentType: 'passport',
+    ocr: { confidence: 0.31, rawText: 'X'.repeat(200), fields: {}, vizFields: {}, printedDates: dates, mrz: zone(line2), provider: 'tesseract' },
+    tampering: CLEAN_IMAGE,
+  });
+
+  // Date of birth encoded as 06-11-05, guarded by the digit 9, which belongs to 06-11-03.
+  const ALTERED = ' 630833<1IND0611059M36010731066100677725<024<';
+  const GENUINE = ' 630833<1IND0611039M36010731066100677725<024<';
+
+  it('puts the second line back on its columns despite the lost characters', () => {
+    const p = parseMrz(zone(ALTERED));
+    expect(p.fields.dateOfBirth).toBe('2006-11-05');
+    expect(p.fields.expiryDate).toBe('2036-01-07');
+    expect(p.fields.gender).toBe('M');
+  });
+
+  it('does not count the characters lost at the frame edge as an altered field', () => {
+    const p = parseMrz(zone(ALTERED));
+    const byId = Object.fromEntries(p.checks.map((c) => [c.id, c]));
+    expect(byId.mrz_doc_number.ok).toBe(false);          // it was not read
+    expect(byId.mrz_doc_number.value).toMatch(/^</);     // and says so
+    expect(byId.mrz_expiry.ok).toBe(true);               // the rest verifies
+    expect(byId.mrz_optional.ok).toBe(true);
+  });
+
+  it('reports TAMPERED and boxes the date of birth', () => {
+    const v = finalVerdict(screen(ALTERED, ['2008-11-05', '2036-01-07']));
+    expect(v.headline).toBe(VERDICT.TAMPERED);
+    expect(v.reason).toMatch(/date of birth/i);
+    expect(v.regions).toHaveLength(1);
+    expect(v.regions[0].label).toBe('DOB field — suspected modification');
+  });
+
+  it('leaves the same capture of the unaltered passport alone', () => {
+    const v = finalVerdict(screen(GENUINE, ['2006-11-03', '2036-01-07']));
+    expect(v.headline).toBe(VERDICT.ORIGINAL);
+    expect(v.regions).toEqual([]);
+  });
+
+  it('does not accuse a genuine document whose zone was merely misread', () => {
+    // The check digit fails because recognition got the date wrong, not because
+    // anyone changed it — and the page still carries the TRUE date, which is one
+    // of the values the digit could have been computed for. That is the tell.
+    const v = finalVerdict(screen(GENUINE.replace('0611039', '0611089'), ['2006-11-03', '2036-01-07']));
+    expect(v.headline).not.toBe(VERDICT.TAMPERED);
+  });
+
+  it('reads filler that came back as letters as filler again', () => {
+    expect(zone(ALTERED).lines[0]).toBe('P<INDPASUPUNURI<<VARUNSKUMARS<<<<<<<<<<<<<<<');
   });
 });
