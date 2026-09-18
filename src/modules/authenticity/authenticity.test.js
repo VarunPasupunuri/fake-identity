@@ -10,7 +10,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { determineAuthenticity, AUTHENTICITY, INDICATOR, CATEGORY, SEVERITY, INDICATOR_STATUS, compareRepresentations, AUTH } from './index.js';
-import { checksumIndicators } from './consistency.js';
+import { checksumIndicators, recoverFromCheckDigit } from './consistency.js';
 import { tamperChecklist, tamperRegions, finalVerdict, VERDICT, CHECK_STATUS, TAMPER_CHECKS } from './report.js';
 import { analysePixels } from '../tampering/analysis.js';
 import { toGray, copyMove, aspectAnomaly, outliers, tile, noiseResidual } from '../tampering/forensics.js';
@@ -829,22 +829,24 @@ describe('the final verdict is binary', () => {
     }
   });
 
-  it('there is no third outcome: every state lands on one of the two', () => {
-    const states = [
-      analyse(passportOcr()),                                                   // original
-      analyse(passportOcr({ dateOfBirth: '2006-11-05' })),                      // tampered
-      determineAuthenticity({ documentType: 'passport', ocr: passportOcr(), tampering: null }), // no indicators
-      determineAuthenticity({ documentType: 'passport', ocr: null, tampering: null }),          // insufficient
+  it('every state lands on exactly one of the three, and on the right one', () => {
+    const cases = [
+      [analyse(passportOcr()), VERDICT.ORIGINAL],
+      [analyse(passportOcr({ dateOfBirth: '2006-11-05' })), VERDICT.TAMPERED],
+      // Examined, nothing found, but not every check could run — still not an accusation.
+      [determineAuthenticity({ documentType: 'passport', ocr: passportOcr(), tampering: null }), VERDICT.ORIGINAL],
+      // Nothing could be examined at all: neither genuine nor fake is claimed.
+      [determineAuthenticity({ documentType: 'passport', ocr: null, tampering: null }), VERDICT.UNREADABLE],
     ];
-    for (const r of states) expect([VERDICT.ORIGINAL, VERDICT.TAMPERED]).toContain(finalVerdict(r).headline);
+    for (const [r, expected] of cases) expect(finalVerdict(r).headline).toBe(expected);
   });
 
   it('only a positive tampering finding produces TAMPERED / FAKE', () => {
-    // An unreadable capture is not an accusation: it reads ORIGINAL / REAL, and the
-    // sentence says the document could not be read rather than claiming it is clean.
+    // An unreadable capture is not an accusation, but it is not a clean bill of
+    // health either: it says so, rather than claiming the document is genuine.
     const blur = determineAuthenticity({ documentType: 'passport', ocr: { confidence: 0.18, rawText: '#'.repeat(40), fields: {}, vizFields: {}, mrz: null }, tampering: CLEAN_IMAGE });
     const v = finalVerdict(blur);
-    expect(v.headline).toBe(VERDICT.ORIGINAL);
+    expect(v.headline).toBe(VERDICT.UNREADABLE);
     expect(v.regions).toEqual([]);
     expect(v.reason).toMatch(/insufficient|could not be read/i);
     expect(v.reason).not.toMatch(/no significant manipulation indicators were detected\.$/);
@@ -865,6 +867,87 @@ describe('the final verdict is binary', () => {
 
   it('carries no score, no risk and no field data', () => {
     const v = finalVerdict(analyse(passportOcr({ dateOfBirth: '2006-11-05' })));
-    expect(Object.keys(v).sort()).toEqual(['headline', 'reason', 'regions', 'tampered']);
+    expect(Object.keys(v).sort()).toEqual(['headline', 'reason', 'regions', 'tampered', 'unreadable']);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* A forgery that edited the zone to match the printed page.            */
+/*                                                                      */
+/* Changing only what is printed leaves the zone to contradict it. The  */
+/* harder case changes both — and then the check digits, which the      */
+/* forger did not recompute, still hold the original.                   */
+/* ------------------------------------------------------------------ */
+describe('an edited machine readable zone betrayed by its own check digit', () => {
+  // Date of birth encoded as 06-11-05, but followed by the check digit 9,
+  // which is the digit for 06-11-03. Every other check digit still verifies.
+  const EDITED = { format: 'TD3', lines: ['P<INDDEMO<<ANITA<<<<<<<<<<<<<<<<<<<<<<<<<<<<', 'AM630833<1IND0611059M36010731066100677725<02'] };
+  const GENUINE = { format: 'TD3', lines: ['P<INDDEMO<<ANITA<<<<<<<<<<<<<<<<<<<<<<<<<<<<', 'AM630833<1IND0611039M36010731066100677725<02'] };
+  const printed = (dob) => ({ fullName: 'ANITA DEMO', documentNumber: 'AM630833', nationality: 'IND', dateOfBirth: dob, expiryDate: '2036-01-07', gender: 'M' });
+  const ocr = (dob, mrz) => ({ confidence: 0.82, rawText: 'REPUBLIC OF DEMOLAND PASSPORT '.repeat(10), fields: printed(dob), vizFields: printed(dob), mrz, provider: 'tesseract' });
+  const run = (dob, mrz) => determineAuthenticity({ documentType: 'passport', ocr: ocr(dob, mrz), tampering: CLEAN_IMAGE });
+
+  it('the check digit still present is the one for the original value', () => {
+    const r = recoverFromCheckDigit({ id: 'mrz_dob', ok: false, value: '061105', expected: 1, actual: '9' });
+    expect(r.field).toBe('dateOfBirth');
+    expect(r.candidates).toContain('061103');
+  });
+
+  it('reports TAMPERED even though the printed page and the zone agree', () => {
+    const r = run('2006-11-05', EDITED);
+    const byField = Object.fromEntries(r.compared.map((c) => [c.field, c.status]));
+    expect(byField.dateOfBirth).toBe('agree');       // nothing to find by comparison alone
+    expect(r.status).toBe(AUTHENTICITY.TAMPERED);    // but the arithmetic still gives it away
+  });
+
+  it('names the date of birth and boxes it', () => {
+    const v = finalVerdict(run('2006-11-05', EDITED));
+    expect(v.headline).toBe(VERDICT.TAMPERED);
+    expect(v.reason).toMatch(/date of birth/i);
+    expect(v.reason).toMatch(/check digit/i);
+    expect(v.regions).toHaveLength(1);
+    expect(v.regions[0].label).toBe('DOB field — suspected modification');
+  });
+
+  it('rests on the printed page agreeing, which a misreading could not produce', () => {
+    const hit = run('2006-11-05', EDITED).indicators.find((i) => i.id === INDICATOR.MRZ_FIELD_RECONSTRUCTED);
+    expect(hit.severity).toBe(SEVERITY.HIGH);
+    expect(hit.evidence.printedAgreesWithZone).toBe(true);
+    expect(hit.evidence.checkDigitPresent).toBe('9');
+    expect(hit.evidence.checkDigitRequired).toBe(1);
+  });
+
+  it('is weaker when the printed value does not agree, because that is what a misread zone looks like', () => {
+    const hit = run('2006-11-03', EDITED).indicators.find((i) => i.id === INDICATOR.MRZ_FIELD_RECONSTRUCTED);
+    expect(hit.severity).toBe(SEVERITY.MEDIUM);
+    expect(hit.evidence.printedAgreesWithZone).toBe(false);
+  });
+
+  it('says nothing at all about a zone whose check digits verify', () => {
+    const r = run('2006-11-03', GENUINE);
+    expect(r.indicators.some((i) => i.id === INDICATOR.MRZ_FIELD_RECONSTRUCTED)).toBe(false);
+    expect(finalVerdict(r).headline).toBe(VERDICT.ORIGINAL);
+  });
+});
+
+describe('a document that could not be read is not called genuine', () => {
+  it('reports that it could not be read, rather than ORIGINAL / REAL', () => {
+    const v = finalVerdict(determineAuthenticity({ documentType: 'passport', ocr: { confidence: 0.15, rawText: '#'.repeat(30), fields: {}, vizFields: {}, mrz: null }, tampering: CLEAN_IMAGE }));
+    expect(v.headline).toBe(VERDICT.UNREADABLE);
+    expect(v.unreadable).toBe(true);
+    expect(v.tampered).toBe(false);
+    expect(v.regions).toEqual([]);
+  });
+
+  it('is not an accusation either', () => {
+    const v = finalVerdict(determineAuthenticity({ documentType: 'passport', ocr: null, tampering: null }));
+    expect(v.headline).not.toBe(VERDICT.TAMPERED);
+    expect(v.headline).toBe(VERDICT.UNREADABLE);
+  });
+
+  it('a document that WAS read and is clean still reports ORIGINAL / REAL', () => {
+    const v = finalVerdict(analyse(passportOcr()));
+    expect(v.headline).toBe(VERDICT.ORIGINAL);
+    expect(v.unreadable).toBe(false);
   });
 });

@@ -18,6 +18,7 @@
  * Pure — no I/O, no clock.
  */
 import { INDICATOR, CATEGORY, SEVERITY, INDICATOR_STATUS, indicator } from './indicators.js';
+import { checkDigit } from '../validation/mrz.js';
 
 /** Where a value was read from. */
 export const SOURCE = Object.freeze({ VISUAL: 'visual', MRZ: 'mrz', BARCODE: 'barcode' });
@@ -190,7 +191,150 @@ export function barcodeFields(barcode) {
 }
 
 /** MRZ check digits: a stated value that fails its own checksum was not written by the issuer. */
-export function checksumIndicators(mrzParsed, ocrConfidence = 1) {
+
+/* ------------------------------------------------------------------ */
+/* Recovering an edited value from the check digit that still guards it */
+/* ------------------------------------------------------------------ */
+
+/** How each field reads in a sentence. */
+const CHECK_PHRASE = { dateOfBirth: 'The date of birth', expiryDate: 'The expiry date', documentNumber: 'The document number' };
+
+/** Which printed field each machine readable zone check digit protects. */
+const CHECK_FIELD = { mrz_dob: 'dateOfBirth', mrz_expiry: 'expiryDate', mrz_doc_number: 'documentNumber' };
+/** Characters each of those fields can legitimately contain. */
+const CHECK_ALPHABET = { dateOfBirth: '0123456789', expiryDate: '0123456789', documentNumber: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ<' };
+
+/** A six-digit MRZ date that could exist (yymmdd). */
+const isMrzDate = (v) => /^\d{6}$/.test(v) && Number(v.slice(2, 4)) >= 1 && Number(v.slice(2, 4)) <= 12 && Number(v.slice(4, 6)) >= 1 && Number(v.slice(4, 6)) <= 31;
+
+/** `yymmdd` as it is printed on the page, for saying plainly what was changed. */
+const mrzDateToDmy = (v) => `${v.slice(4, 6)}/${v.slice(2, 4)}/${Number(v.slice(0, 2)) > 40 ? '19' : '20'}${v.slice(0, 2)}`;
+
+/**
+ * The value a failing check digit was originally computed for.
+ *
+ * Each field in the machine readable zone is followed by a digit derived from it.
+ * Change the field and the digit no longer matches — and because the digit is a
+ * function of the value it guards, the value that WOULD produce the digit still
+ * present can be searched for. A single character differing is what an edit to
+ * one field looks like, so that is the search: every one-character variant of
+ * what is encoded, keeping those whose check digit is the one actually printed.
+ *
+ * This reads the forger's own arithmetic back. It is not an inference from
+ * appearance — nothing about the image is consulted.
+ *
+ * @returns {{ field: string, candidates: string[] }|null}
+ */
+export function recoverFromCheckDigit(check) {
+  const field = CHECK_FIELD[check?.id];
+  if (!field || check.ok) return null;
+  const observed = Number(check.actual);
+  if (!Number.isInteger(observed)) return null;
+  const alphabet = CHECK_ALPHABET[field];
+  const isDate = field !== 'documentNumber';
+  const found = new Set();
+  for (let i = 0; i < check.value.length; i += 1) {
+    for (const ch of alphabet) {
+      if (ch === check.value[i]) continue;
+      const candidate = check.value.slice(0, i) + ch + check.value.slice(i + 1);
+      if (checkDigit(candidate) !== observed) continue;
+      if (isDate && !isMrzDate(candidate)) continue;
+      found.add(candidate);
+    }
+  }
+  return found.size ? { field, candidates: [...found] } : null;
+}
+
+
+/**
+ * Narrow the recovered candidates using the composite check digit.
+ *
+ * The composite digit is computed over several fields at once, including the one
+ * that was edited, so it too was calculated from the original data and left
+ * behind. A candidate that satisfies both digits is constrained twice over; one
+ * that satisfies only the field's own digit can be dropped. Two independent
+ * digits agreeing on the same value is also what separates a real edit from a
+ * misread character, which would have no reason to satisfy either.
+ *
+ * The composite is only usable when it is among the failing checks; if it
+ * verifies, the substitution cannot be tested against it and the candidates
+ * stand as they are.
+ */
+function narrowByComposite(recovered, mrzParsed, failure) {
+  const composite = (mrzParsed.checks || []).find((c) => c.id === 'mrz_composite');
+  if (!composite || composite.ok || !composite.value) return recovered;
+  const target = Number(composite.actual);
+  if (!Number.isInteger(target)) return recovered;
+  const at = composite.value.indexOf(failure.value);
+  if (at < 0) return recovered;
+  const consistent = recovered.candidates.filter((candidate) => {
+    const swapped = composite.value.slice(0, at) + candidate + composite.value.slice(at + candidate.length);
+    return checkDigit(swapped) === target;
+  });
+  return consistent.length ? { ...recovered, candidates: consistent, corroborated: true } : recovered;
+}
+
+/**
+ * A field whose check digit betrays that it was edited.
+ *
+ * A failing check digit on its own is weak: misreading one character of the zone
+ * breaks it just as an edit does. What separates the two is the printed page. If
+ * recognition had misread the zone, the value printed in the visual zone would
+ * still be the true one and would disagree with it — that case is already covered
+ * by the field comparison. When the printed value AGREES with the zone and only
+ * the check digit dissents, recognition cannot be the explanation: the same error
+ * would have to occur twice, in two different typefaces, in two places on the
+ * page. What remains is that both were changed and the check digit was not.
+ *
+ * The composite digit is expected to fail alongside the field it covers, so it is
+ * not counted as separate damage.
+ */
+function reconstructionIndicators(mrzParsed, visual, ocrConfidence) {
+  const failed = (mrzParsed.checks || []).filter((c) => !c.ok);
+  const fieldFailures = failed.filter((c) => CHECK_FIELD[c.id]);
+  // More than one edited field, or damage outside the composite, means the zone
+  // was probably not read cleanly; that is the ordinary checksum finding, not this.
+  const others = failed.filter((c) => c.id !== 'mrz_composite' && !CHECK_FIELD[c.id]);
+  if (fieldFailures.length !== 1 || others.length) return [];
+
+  let recovered = recoverFromCheckDigit(fieldFailures[0]);
+  if (!recovered || recovered.candidates.length > 3) return [];
+  recovered = narrowByComposite(recovered, mrzParsed, fieldFailures[0]);
+
+  const encoded = mrzParsed.fields?.[recovered.field];
+  const printed = visual?.[recovered.field];
+  const agrees = Boolean(printed && encoded && String(printed) === String(encoded));
+  const was = recovered.candidates.length === 1 && recovered.field !== 'documentNumber'
+    ? mrzDateToDmy(recovered.candidates[0])
+    : null;
+
+  const label = CHECK_PHRASE[recovered.field] || recovered.field;
+  return [indicator({
+    id: INDICATOR.MRZ_FIELD_RECONSTRUCTED,
+    category: CATEGORY.MRZ,
+    severity: agrees ? SEVERITY.HIGH : SEVERITY.MEDIUM,
+    field: recovered.field,
+    // Point at the printed field, which is where an evaluator can see the change.
+    region: FIELD_REGION[recovered.field] || null,
+    explanation: `${label} does not match the check digit printed beside it in the machine readable zone.`
+      + (was ? ` That digit is the one for ${was}, so the encoded value was changed from ${was}.` : '')
+      + (agrees
+        ? ' The printed value agrees with the altered zone, so both were changed together; a misreading would have had to occur identically in two separate places on the page.'
+        : ' This can also happen when the zone is not read cleanly.'),
+    evidence: {
+      check: fieldFailures[0].id,
+      encoded: fieldFailures[0].value,
+      checkDigitPresent: fieldFailures[0].actual,
+      checkDigitRequired: fieldFailures[0].expected,
+      recoveredOriginal: recovered.candidates,
+      printedAgreesWithZone: agrees,
+    },
+    riskContribution: agrees ? 34 : 14,
+    confidence: Math.max(0.4, Math.min(1, ocrConfidence)) * (agrees ? 1 : 0.6),
+  })];
+}
+
+export function checksumIndicators(mrzParsed, ocrConfidence = 1, visual = null) {
   if (!mrzParsed?.checks?.length) return [];
   const failed = mrzParsed.checks.filter((c) => !c.ok);
   if (!failed.length) {
@@ -207,7 +351,7 @@ export function checksumIndicators(mrzParsed, ocrConfidence = 1) {
   // OCR mis-reading one MRZ character also breaks a checksum, so a single failure is
   // weaker evidence than several.
   const many = failed.length > 1;
-  return [indicator({
+  return [...reconstructionIndicators(mrzParsed, visual, ocrConfidence), indicator({
     id: INDICATOR.MRZ_CHECKSUM_FAILURE,
     category: CATEGORY.MRZ,
     severity: many ? SEVERITY.HIGH : SEVERITY.MEDIUM,

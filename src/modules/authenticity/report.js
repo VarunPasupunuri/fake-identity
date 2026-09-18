@@ -33,12 +33,12 @@ const legible = (a) => Boolean(a?.coverageDetail?.textLegible);
 export const TAMPER_CHECKS = Object.freeze([
   { id: 'photo_replacement', label: 'Photo replacement', ids: [INDICATOR.PHOTO_REPLACEMENT_INDICATOR, INDICATOR.PHOTO_REPLACEMENT_CORROBORATED], ran: imageRan },
   { id: 'text_manipulation', label: 'Text manipulation', ids: [INDICATOR.LOCALIZED_TEXT_EDIT, INDICATOR.COPY_MOVE_INDICATOR], ran: imageRan },
-  { id: 'date_modification', label: 'Date / DOB modification', ids: [INDICATOR.VISUAL_MRZ_DOB_MISMATCH, INDICATOR.VISUAL_MRZ_EXPIRY_MISMATCH], ran: (a) => comparedAny(a, ['dateOfBirth', 'expiryDate']) },
+  { id: 'date_modification', label: 'Date / DOB modification', ids: [INDICATOR.VISUAL_MRZ_DOB_MISMATCH, INDICATOR.VISUAL_MRZ_EXPIRY_MISMATCH, INDICATOR.MRZ_FIELD_RECONSTRUCTED], ran: (a) => comparedAny(a, ['dateOfBirth', 'expiryDate']) },
   { id: 'field_modification', label: 'Document number / identity fields', ids: [INDICATOR.VISUAL_MRZ_PASSPORT_NUMBER_MISMATCH, INDICATOR.VISUAL_MRZ_NAME_MISMATCH, INDICATOR.VISUAL_MRZ_NATIONALITY_MISMATCH, INDICATOR.VISUAL_MRZ_SEX_MISMATCH], ran: (a) => comparedAny(a, ['documentNumber', 'fullName', 'nationality', 'gender']) },
   { id: 'stamp_forgery', label: 'Stamp / seal forgery', ids: [INDICATOR.STAMP_COMPOSITING_INDICATOR], ran: imageRan },
   { id: 'image_forensics', label: 'Image / compression forensics', ids: [INDICATOR.ELA_LOCALIZED_ANOMALY, INDICATOR.NOISE_INCONSISTENCY, INDICATOR.RESAMPLING_INCONSISTENCY, INDICATOR.ASPECT_RATIO_ANOMALY], ran: imageRan },
   { id: 'metadata', label: 'Metadata / edit indicators', ids: [INDICATOR.METADATA_EDITOR_INDICATOR, INDICATOR.METADATA_TIMESTAMP_INDICATOR], ran: imageRan },
-  { id: 'code_consistency', label: 'MRZ / QR / barcode consistency', ids: [INDICATOR.MRZ_CHECKSUM_FAILURE, INDICATOR.MRZ_ABSENT, INDICATOR.BARCODE_FIELD_MISMATCH], gate: legible, ran: (a) => Boolean(a?.coverageDetail?.mrzIntegrity) || comparedAny(a, ['dateOfBirth', 'documentNumber', 'fullName']) },
+  { id: 'code_consistency', label: 'MRZ / QR / barcode consistency', ids: [INDICATOR.MRZ_CHECKSUM_FAILURE, INDICATOR.MRZ_ABSENT, INDICATOR.BARCODE_FIELD_MISMATCH, INDICATOR.MRZ_FIELD_RECONSTRUCTED], gate: legible, ran: (a) => Boolean(a?.coverageDetail?.mrzIntegrity) || comparedAny(a, ['dateOfBirth', 'documentNumber', 'fullName']) },
   { id: 'structure', label: 'Document structure', ids: [INDICATOR.DOCUMENT_LAYOUT_ANOMALY], gate: legible, ran: (a) => Boolean(a?.coverageDetail?.structure) },
 ]);
 
@@ -120,29 +120,34 @@ export function failedChecks(authenticity) {
 /* FINAL VERDICT — the two-outcome projection shown to the evaluator.   */
 /* ------------------------------------------------------------------ */
 
-export const VERDICT = Object.freeze({ ORIGINAL: 'ORIGINAL / REAL', TAMPERED: 'TAMPERED / FAKE' });
+export const VERDICT = Object.freeze({
+  ORIGINAL: 'ORIGINAL / REAL',
+  TAMPERED: 'TAMPERED / FAKE',
+  UNREADABLE: 'COULD NOT BE READ',
+});
 
 /**
- * Collapse the engine's four states into the two the final screen shows.
+ * The verdict the final screen shows.
  *
- * Only a positive TAMPERED determination — evidence the engine judged serious
- * enough to accuse the document — produces TAMPERED / FAKE. Everything else,
- * including an analysis that could not run, reads ORIGINAL / REAL, because a
- * document is not fake merely because it could not be examined.
+ * TAMPERED / FAKE requires a positive determination — evidence the engine judged
+ * serious enough to accuse the document. ORIGINAL / REAL requires the opposite:
+ * that the document was actually examined and nothing was found.
  *
- * That collapse loses a real distinction: "examined and clean" and "could not
- * be examined" both land on ORIGINAL / REAL. The reason sentence is where the
- * difference survives — it comes from the engine's own summary, so a capture
- * that could not be read says so instead of claiming a clean bill of health.
+ * A capture the engine could not read earns neither. Saying ORIGINAL / REAL there
+ * reports "we could not look" as "we looked and it is genuine", which is the one
+ * answer a screening tool must never give: it passes a forgery on the strength of
+ * a bad photograph. It is not an accusation either — an unreadable document is not
+ * a fake one — so it is reported as what it is, with the retake as the next step.
  *
- * Nothing here is document-specific: the verdict follows the indicator list,
- * and the sentence is whatever the engine derived from the evidence it had.
+ * Nothing here is document-specific: the verdict follows the indicator list, and
+ * the sentence is whatever the engine derived from the evidence it had.
  *
  * @param {Object|null} authenticity  result of determineAuthenticity()
- * @returns {{ tampered: boolean, headline: string, reason: string, regions: Object[] }}
+ * @returns {{ tampered: boolean, unreadable: boolean, headline: string, reason: string, regions: Object[] }}
  */
 export function finalVerdict(authenticity) {
   const tampered = authenticity?.status === AUTHENTICITY.TAMPERED;
+  const unreadable = !tampered && (!authenticity || authenticity.status === AUTHENTICITY.INSUFFICIENT);
   // Only the regions that carry the finding. A tampered document usually also
   // shows weaker marks elsewhere — compression noise around the portrait, an
   // edge the camera softened — and boxing those alongside the alteration buries
@@ -155,7 +160,8 @@ export function finalVerdict(authenticity) {
   const regions = found.filter((r) => r.tone === top).map((r) => ({ ...r, tone: 'high' }));
   return {
     tampered,
-    headline: tampered ? VERDICT.TAMPERED : VERDICT.ORIGINAL,
+    unreadable,
+    headline: tampered ? VERDICT.TAMPERED : unreadable ? VERDICT.UNREADABLE : VERDICT.ORIGINAL,
     reason: authenticity?.summary || 'No analysis was produced for this document.',
     regions,
   };

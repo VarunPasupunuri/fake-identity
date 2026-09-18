@@ -77,7 +77,7 @@ export default function ScreeningPage() {
     startedRef.current = true;
     setStep(2);
     setSaveError('');
-    const out = await pipeline.run({ documentType, documentImage: docImage.dataUrl, documentFile: docImage.file, liveImage: liveImage?.dataUrl, options: { useMock, scenario, mockDocument, providers: settings.providers, history, inputSource: docImage.source === 'camera' ? 'camera' : 'upload', preflight: preflight.result, preflightOcr: preflight.takeOcr(docImage), preflightOcrImage: docImage.dataUrl } });
+    const out = await pipeline.run({ documentType, documentImage: docImage.analysisUrl || docImage.dataUrl, documentFile: docImage.file, liveImage: liveImage?.dataUrl, options: { useMock, scenario, mockDocument, providers: settings.providers, history, inputSource: docImage.source === 'camera' ? 'camera' : 'upload', preflight: preflight.result, preflightOcr: preflight.takeOcr(docImage), preflightOcrImage: docImage.analysisUrl || docImage.dataUrl } });
     if (!out) { startedRef.current = false; return; }
     try {
       const id = await createScreening({ user: { ...user, checkpoint: settings.checkpoint }, requestedType: documentType, images: { document: docImage.dataUrl, live: liveImage?.dataUrl }, ...out, onWarning: (msg) => toast.warn('Image storage fallback', msg) });

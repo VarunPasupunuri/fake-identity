@@ -52,8 +52,13 @@ export default function DocumentUpload({ documentType, onDocumentType, image, on
     setError(''); setBusy(true);
     try {
       const raw = await fileToDataUrl(file);
+      // Displayed and stored at a working size, but ANALYSED at full resolution.
+      // Text recognition needs character height: on a photograph where the document
+      // fills part of the frame, downscaling leaves the machine readable zone a few
+      // pixels tall and unreadable, and an unreadable zone means nothing can be
+      // cross-checked against the printed fields.
       const dataUrl = await resizeDataUrl(raw, 1600, 0.9);
-      onImage({ dataUrl, file, name: file.name, source: 'upload' });
+      onImage({ dataUrl, analysisUrl: raw, file, name: file.name, source: 'upload' });
       setMode('choose');
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
