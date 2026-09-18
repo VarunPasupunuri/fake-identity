@@ -11,6 +11,27 @@ import { cropBand, rotateDataUrl } from '../../lib/image.js';
 let workerPromise = null;
 let mrzWorkerPromise = null;
 
+/**
+ * One recognition at a time.
+ *
+ * A Tesseract worker recognises one image at a time; asking a second of it while
+ * the first is still running does not queue, it corrupts both. Two passes race
+ * here by design of the screen: the type check starts the moment a document is
+ * chosen, and the screening starts when the officer continues, which is usually
+ * before the first has finished. The same document then came back unreadable,
+ * and read perfectly once the page was reloaded and the timing happened to differ.
+ *
+ * Every recognition now goes through this queue, so a later one waits for the
+ * one in flight instead of trampling it. A failed pass releases the queue like
+ * any other, so one bad image cannot wedge the screen until it is reloaded.
+ */
+let inFlight = Promise.resolve();
+function serialised(run) {
+  const result = inFlight.then(run, run);
+  inFlight = result.then(() => undefined, () => undefined);
+  return result;
+}
+
 /** Characters the machine readable zone is allowed to contain. Nothing else exists there. */
 const MRZ_CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<';
 /** The band of the page the zone occupies, as a fraction of height. */
@@ -87,7 +108,7 @@ async function readMrzBand(imageDataUrl, onProgress) {
     onProgress?.(0.9, 'Reading machine readable zone');
     const band = await cropBand(imageDataUrl, MRZ_BAND);
     const worker = await getMrzWorker();
-    const { data } = await worker.recognize(band);
+    const { data } = await serialised(() => worker.recognize(band));
     return data.text || '';
   } catch {
     return '';
@@ -117,7 +138,7 @@ export async function extract({ imageDataUrl, documentType = 'passport', onProgr
       onProgress?.(0.5, 'Trying a different page orientation');
       try { image = await rotateDataUrl(imageDataUrl, degrees); } catch { continue; }
     }
-    const { data } = await worker.recognize(image);
+    const { data } = await serialised(() => worker.recognize(image));
     const rawText = data.text || '';
     const parsed = parseFields(rawText, documentType);
     const confidence = Math.max(0, Math.min(1, (data.confidence || 0) / 100));

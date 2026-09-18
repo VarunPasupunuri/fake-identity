@@ -23,15 +23,17 @@ export function useDocumentPreflight({ providers, useMock, scenario, mockDocumen
   const [result, setResult] = useState(null);
   const cache = useRef(IDLE);
   const runId = useRef(0);
+  // The check in flight, so a caller can wait for it rather than act on no answer.
+  const pending = useRef(null);
 
-  const reset = useCallback(() => { cache.current = IDLE; runId.current += 1; setState(IDLE.state); setResult(null); }, []);
+  const reset = useCallback(() => { cache.current = IDLE; runId.current += 1; pending.current = null; setState(IDLE.state); setResult(null); }, []);
 
   /**
    * Check one image against the selected type. Re-checking the same image with a
    * different selection reuses the cached OCR — the comparison is pure.
    * @returns {Promise<Object|null>} the preflight result
    */
-  const check = useCallback(async (image, selected) => {
+  const runCheck = useCallback(async (image, selected) => {
     if (!image?.dataUrl) { reset(); return null; }
     const id = ++runId.current;
     // Recognise the same image the screening will analyse — the full-resolution
@@ -79,11 +81,30 @@ export function useDocumentPreflight({ providers, useMock, scenario, mockDocumen
     }
   }, [providers?.ocr, useMock, scenario, mockDocument, reset]);
 
+  /** Run the check, keeping the promise so a caller can wait for it. */
+  const check = useCallback((image, selected) => {
+    const p = runCheck(image, selected).finally(() => { if (pending.current === p) pending.current = null; });
+    pending.current = p;
+    return p;
+  }, [runCheck]);
+
+  /**
+   * The settled result of the check, waiting for one still running.
+   *
+   * The officer can continue before the check has finished, and a check that has
+   * not answered yet is not an answer of "no problem": acting on the absent
+   * result let a document of the wrong type through simply by being quick enough.
+   */
+  const settle = useCallback(async () => {
+    if (pending.current) { try { return await pending.current; } catch { return cache.current.result; } }
+    return cache.current.result;
+  }, []);
+
   /** The OCR output for the checked image, so the pipeline does not recognise it twice. */
   const takeOcr = useCallback((image) => {
     const k = image?.analysisUrl || image?.dataUrl;
     return k && cache.current.imageKey === k ? cache.current.ocr : null;
   }, []);
 
-  return { state, result, check, reset, takeOcr, blocking: Boolean(result?.blocking) };
+  return { state, result, check, settle, reset, takeOcr, blocking: Boolean(result?.blocking) };
 }

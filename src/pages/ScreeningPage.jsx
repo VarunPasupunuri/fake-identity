@@ -73,11 +73,14 @@ export default function ScreeningPage() {
   const start = async () => {
     if (startedRef.current) return;
     // Hard stop: a blocking type mismatch must never reach the screening modules.
-    if (preflight.blocking) return;
+    // Wait for a check still running rather than reading its absent result as a
+    // pass — otherwise a document of the wrong type gets through by being quick.
+    const pre = await preflight.settle();
+    if (pre?.blocking || preflight.blocking) return;
     startedRef.current = true;
     setStep(2);
     setSaveError('');
-    const out = await pipeline.run({ documentType, documentImage: docImage.analysisUrl || docImage.dataUrl, documentFile: docImage.file, liveImage: liveImage?.dataUrl, options: { useMock, scenario, mockDocument, providers: settings.providers, history, inputSource: docImage.source === 'camera' ? 'camera' : 'upload', preflight: preflight.result, preflightOcr: preflight.takeOcr(docImage), preflightOcrImage: docImage.analysisUrl || docImage.dataUrl } });
+    const out = await pipeline.run({ documentType, documentImage: docImage.analysisUrl || docImage.dataUrl, documentFile: docImage.file, liveImage: liveImage?.dataUrl, options: { useMock, scenario, mockDocument, providers: settings.providers, history, inputSource: docImage.source === 'camera' ? 'camera' : 'upload', preflight: pre || preflight.result, preflightOcr: preflight.takeOcr(docImage), preflightOcrImage: docImage.analysisUrl || docImage.dataUrl } });
     if (!out) { startedRef.current = false; return; }
     try {
       const id = await createScreening({ user: { ...user, checkpoint: settings.checkpoint }, requestedType: documentType, images: { document: docImage.dataUrl, live: liveImage?.dataUrl }, ...out, onWarning: (msg) => toast.warn('Image storage fallback', msg) });
