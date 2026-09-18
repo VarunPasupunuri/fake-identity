@@ -232,7 +232,26 @@ describe('no false positives', () => {
   it('poor OCR is never tampering — the comparison is skipped, not failed', () => {
     const r = analyse(passportOcr({}, { confidence: 0.2 }));
     expect(r.status).not.toBe(AUTHENTICITY.TAMPERED);
-    expect(JSON.stringify(r.reasons)).toMatch(/too unreliable|too few checks/i);
+    // The printed values are too poorly recognised to be worth comparing, so nothing
+    // is cross-checked. That is reported as a gap in the analysis, never as a finding.
+    expect(r.compared.every((c) => c.status === 'not_compared')).toBe(true);
+    expect(JSON.stringify(r.reasons)).toMatch(/too unreliable|too few checks|nothing could be cross-checked/i);
+  });
+
+  it('a zone that verifies its own check digits counts as read, whatever the page confidence', () => {
+    // Recognition reports one confidence for the whole page, and a document
+    // photographed on a patterned surface drags that average down however cleanly
+    // the zone came out. Discarding the zone for that reason throws away the only
+    // evidence that can be checked against itself.
+    const r = analyse(passportOcr({}, { confidence: 0.2 }));
+    expect(r.coverageDetail.textLegible).toBe(true);
+    expect(r.status).not.toBe(AUTHENTICITY.INSUFFICIENT);
+  });
+
+  it('but a page with no readable zone at all is still insufficient', () => {
+    const r = determineAuthenticity({ documentType: 'passport', ocr: { confidence: 0.2, rawText: '###', fields: {}, vizFields: {}, mrz: null }, tampering: CLEAN_IMAGE });
+    expect(r.coverageDetail.textLegible).toBe(false);
+    expect(r.status).toBe(AUTHENTICITY.INSUFFICIENT);
   });
 
   it('a face mismatch alone is not evidence that the DOCUMENT was altered', () => {

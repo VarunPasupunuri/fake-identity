@@ -67,7 +67,7 @@ export async function rotateDataUrl(dataUrl, degrees) {
  * @param {string} dataUrl
  * @param {{ top?: number, height?: number, scale?: number }} band  fractions of image height
  */
-export async function cropBand(dataUrl, { top = 0.7, height = 0.3, scale = 2 } = {}) {
+export async function cropBand(dataUrl, { top = 0.7, height = 0.3, scale = 2, enhance = false } = {}) {
   const img = await loadImage(dataUrl);
   const y = Math.max(0, Math.round(img.height * top));
   const h = Math.max(1, Math.min(img.height - y, Math.round(img.height * height)));
@@ -77,7 +77,42 @@ export async function cropBand(dataUrl, { top = 0.7, height = 0.3, scale = 2 } =
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(img, 0, y, img.width, h, 0, 0, canvas.width, canvas.height);
+  if (enhance) enhanceForOcr(ctx, canvas.width, canvas.height);
   return canvas.toDataURL('image/png');
+}
+
+/**
+ * Flatten a photographed strip to high-contrast grey, in place.
+ *
+ * A document photographed rather than scanned carries the colour of whatever it
+ * was lying on, the shadow of the hand holding it, and a page that is off-white
+ * rather than white. Recognition works on the difference between ink and paper,
+ * so the channel is reduced to luminance and stretched to fill the range: paper
+ * goes to white, ink to black, and the printed surface stops competing with the
+ * print. The percentile bounds keep a single glare highlight or dark fold from
+ * setting the range for the whole strip.
+ */
+function enhanceForOcr(ctx, width, height) {
+  const image = ctx.getImageData(0, 0, width, height);
+  const px = image.data;
+  const histogram = new Uint32Array(256);
+  for (let i = 0; i < px.length; i += 4) {
+    const luma = (px[i] * 299 + px[i + 1] * 587 + px[i + 2] * 114) / 1000 | 0;
+    px[i] = px[i + 1] = px[i + 2] = luma;
+    histogram[luma] += 1;
+  }
+  const total = width * height;
+  const cut = Math.max(1, Math.round(total * 0.02));
+  let low = 0; let high = 255; let seen = 0;
+  for (let v = 0; v < 256; v += 1) { seen += histogram[v]; if (seen >= cut) { low = v; break; } }
+  seen = 0;
+  for (let v = 255; v >= 0; v -= 1) { seen += histogram[v]; if (seen >= cut) { high = v; break; } }
+  const span = Math.max(1, high - low);
+  for (let i = 0; i < px.length; i += 4) {
+    const v = Math.max(0, Math.min(255, ((px[i] - low) * 255) / span));
+    px[i] = px[i + 1] = px[i + 2] = v;
+  }
+  ctx.putImageData(image, 0, 0);
 }
 
 export function dataUrlToBlob(dataUrl) {

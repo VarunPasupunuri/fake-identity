@@ -192,6 +192,26 @@ export function barcodeFields(barcode) {
 
 /** MRZ check digits: a stated value that fails its own checksum was not written by the issuer. */
 
+
+/**
+ * Whether the machine readable zone was read correctly, judged by the zone itself.
+ *
+ * Recognition reports one confidence for the whole page, and a document
+ * photographed on a patterned surface drags that average down however cleanly the
+ * zone itself came out. The zone does not need the page's opinion: each field
+ * carries a check digit derived from it, so several of them verifying is proof the
+ * characters were read correctly. Misreading does not produce values that satisfy
+ * their own checksums.
+ *
+ * The composite digit is excluded because it fails whenever any field it covers
+ * was altered, which is the very case this has to stay usable for.
+ */
+export function mrzReadReliably(mrzParsed) {
+  const checks = (mrzParsed?.checks || []).filter((c) => c.id !== 'mrz_composite');
+  if (checks.length < 2) return false;
+  return checks.filter((c) => c.ok).length >= 2;
+}
+
 /* ------------------------------------------------------------------ */
 /* Recovering an edited value from the check digit that still guards it */
 /* ------------------------------------------------------------------ */
@@ -330,7 +350,9 @@ function reconstructionIndicators(mrzParsed, visual, ocrConfidence) {
       printedAgreesWithZone: agrees,
     },
     riskContribution: agrees ? 34 : 14,
-    confidence: Math.max(0.4, Math.min(1, ocrConfidence)) * (agrees ? 1 : 0.6),
+    // A zone that verifies its other check digits was read correctly, whatever the
+    // page-wide confidence says, so the arithmetic is believed on its own terms.
+    confidence: (mrzReadReliably(mrzParsed) ? 0.9 : Math.max(0.4, Math.min(1, ocrConfidence))) * (agrees ? 1 : 0.55),
   })];
 }
 

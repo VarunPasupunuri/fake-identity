@@ -32,7 +32,7 @@
  *
  * Pure and deterministic — no I/O, no clock, no randomness.
  */
-import { compareRepresentations, checksumIndicators, barcodeFields } from './consistency.js';
+import { compareRepresentations, checksumIndicators, barcodeFields, mrzReadReliably } from './consistency.js';
 import { INDICATOR, CATEGORY, SEVERITY, SEVERITY_RANK, INDICATOR_STATUS, indicator, peakSeverity } from './indicators.js';
 import { getProfile } from '../documents/registry.js';
 import { parseMrz } from '../validation/mrz.js';
@@ -354,6 +354,10 @@ export function determineAuthenticity({ documentType = 'generic_document', ocr =
 
   // --- 1. the same fact, read from independent places -----------------
   const legibleEnough = ocrConfidence >= AUTH.MIN_OCR_FOR_FIELDS;
+  // A zone that verifies its own check digits was read correctly regardless of what
+  // the page-wide confidence says, so it counts as having read the document even when
+  // a cluttered background drags that average below the threshold.
+  const mrzReliable = mrzReadReliably(mrzParsed);
   // "Printed" means the visual zone where the OCR provider separates it (travel documents,
   // where `fields` is MRZ-seeded and comparing it with the MRZ would be circular), and the
   // extracted fields everywhere else, where those ARE the printed values.
@@ -425,7 +429,7 @@ export function determineAuthenticity({ documentType = 'generic_document', ocr =
     fieldCrossCheck: crossChecked > 0,
     mrzIntegrity: Boolean(mrzParsed),
     imageForensics: Boolean(tampering),
-    textLegible: legibleEnough,
+    textLegible: legibleEnough || mrzReliable,
     structure: textLength >= 24,
   };
   const possible = Object.entries(AUTH.COVERAGE_WEIGHTS).reduce((s, [k, w]) => s + (applicable[k] ? w : 0), 0);

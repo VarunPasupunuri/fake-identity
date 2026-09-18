@@ -14,7 +14,7 @@ let mrzWorkerPromise = null;
 /** Characters the machine readable zone is allowed to contain. Nothing else exists there. */
 const MRZ_CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<';
 /** The band of the page the zone occupies, as a fraction of height. */
-const MRZ_BAND = { top: 0.62, height: 0.38, scale: 2 };
+const MRZ_BAND = { top: 0.62, height: 0.38, scale: 2, enhance: true };
 /**
  * Quarter turns to try, in order. Upright first, because most captures are.
  * Then the two sideways turns, which is how a page photographed with the phone
