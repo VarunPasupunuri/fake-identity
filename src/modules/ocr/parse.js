@@ -29,11 +29,60 @@ function iso(y, m, d) {
 
 const DATE_RE = '(\\d{1,2}[\\s/.-]+(?:\\d{1,2}|[A-Za-z]{3,9})[\\s/.-]+\\d{2,4}|\\d{4}[/.-]\\d{1,2}[/.-]\\d{1,2})';
 
+/** How many lines below a label a value may sit. Bio pages use one; two absorbs a wrapped label. */
+const VALUE_LOOKAHEAD = 2;
+
+/** Every match of `valueRe` in one line, with the column it starts at. */
+function candidates(line, valueRe) {
+  const re = new RegExp(valueRe, 'gi');
+  const out = [];
+  let m;
+  while ((m = re.exec(line)) !== null) {
+    out.push({ text: (m[1] !== undefined ? m[1] : m[0]).trim(), at: m.index });
+    if (m.index === re.lastIndex) re.lastIndex += 1;
+  }
+  return out;
+}
+
+/**
+ * Find the value belonging to a label.
+ *
+ * Identity documents are not printed as "label: value" pairs. A passport bio page
+ * prints a ROW OF LABELS above a ROW OF VALUES, several columns wide, and each
+ * label usually carries a translation after a slash:
+ *
+ *     Nationality/ Nationalite   Sex/ Sexe   Date of Birth/ Date de naissance
+ *     INDIAN                     F           05/11/2006
+ *
+ * So the value is looked for in two places. First on the label's own line, for
+ * documents that do print inline. A candidate separated from the label by a "/"
+ * is skipped there: it belongs to the label's translation, not to the holder —
+ * that is what turns "Nationality/ Nationalite" into a nationality of NATIONALITE.
+ *
+ * Failing that, the following lines are read as columns, and the value is the
+ * candidate starting nearest the label's own column. Column position is what
+ * keeps the date under "Date of Expiry" from being read as the date of issue
+ * printed to its left.
+ */
 function grab(text, labels, valueRe = '([A-Z0-9][A-Z0-9 \\-/]{2,40})') {
+  const lines = String(text).split(/\r?\n/);
   for (const label of labels) {
-    const re = new RegExp(`${label}\\s*[:.\\-]?\\s*${valueRe}`, 'i');
-    const m = text.match(re);
-    if (m) return m[1].trim();
+    const labelRe = new RegExp(label, 'i');
+    for (let i = 0; i < lines.length; i += 1) {
+      const m = lines[i].match(labelRe);
+      if (!m) continue;
+      const column = m.index;
+      const tail = lines[i].slice(m.index + m[0].length);
+
+      const inline = candidates(tail, valueRe).find((c) => !tail.slice(0, c.at).includes('/'));
+      if (inline) return inline.text;
+
+      for (let j = i + 1; j < Math.min(i + 1 + VALUE_LOOKAHEAD, lines.length); j += 1) {
+        const found = candidates(lines[j], valueRe);
+        if (!found.length) continue;
+        return found.reduce((a, b) => (Math.abs(b.at - column) < Math.abs(a.at - column) ? b : a)).text;
+      }
+    }
   }
   return null;
 }
