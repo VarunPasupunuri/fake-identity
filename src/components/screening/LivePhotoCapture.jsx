@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Camera, RefreshCw, Upload, SwitchCamera, Timer, AlertTriangle } from 'lucide-react';
+import { describeCameraError } from './DocumentCamera.jsx';
 import { fileToDataUrl, resizeDataUrl } from '../../lib/image.js';
 import { assessImageQuality } from '../../lib/imageQuality.js';
 import { cx } from '../../lib/format.js';
@@ -9,7 +10,10 @@ export default function LivePhotoCapture({ image, onImage, onBack, onNext, allow
   const streamRef = useRef(null);
   const fileRef = useRef(null);
   const [facing, setFacing] = useState('user');
-  const [camError, setCamError] = useState('');
+  // `attempt` lets the officer re-request the camera after fixing a browser permission,
+  // without reloading the page: bumping it re-runs the getUserMedia effect.
+  const [attempt, setAttempt] = useState(0);
+  const [camError, setCamError] = useState(null);
   const [ready, setReady] = useState(false);
   const [count, setCount] = useState(0);
   const [quality, setQuality] = useState(null);
@@ -17,19 +21,19 @@ export default function LivePhotoCapture({ image, onImage, onBack, onNext, allow
   useEffect(() => {
     if (image) return undefined;
     let cancelled = false;
-    setReady(false); setCamError('');
+    setReady(false); setCamError(null);
     (async () => {
       try {
-        if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera API not available in this browser.');
+        if (!navigator.mediaDevices?.getUserMedia) { const e = new Error('Camera API not available in this browser.'); e.name = 'unsupported'; throw e; }
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false });
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
         if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play().catch(() => {}); }
         setReady(true);
-      } catch (e) { setCamError(e.message || 'Unable to access camera.'); }
+      } catch (e) { if (!cancelled) setCamError(describeCameraError(e)); }
     })();
     return () => { cancelled = true; streamRef.current?.getTracks().forEach((t) => t.stop()); streamRef.current = null; };
-  }, [facing, image]);
+  }, [facing, image, attempt]);
 
   useEffect(() => {
     if (!image?.dataUrl) { setQuality(null); return; }
@@ -68,7 +72,12 @@ export default function LivePhotoCapture({ image, onImage, onBack, onNext, allow
             {image ? (
               <img src={image.dataUrl} alt="Live capture" className="h-full w-full object-contain animate-fade-in" />
             ) : camError ? (
-              <div className="px-6 text-center text-sm text-slate-300"><AlertTriangle className="mx-auto mb-2 h-6 w-6 text-amber-400" /><p>{camError}</p><p className="mt-1 text-xs text-slate-400">Upload a photo instead.</p></div>
+              <div className="max-w-md px-6 text-center text-sm text-slate-300" role="alert">
+                <AlertTriangle className="mx-auto mb-2 h-6 w-6 text-amber-400" aria-hidden="true" />
+                <p className="font-medium text-white">{camError.title}</p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-400">{camError.body}</p>
+                {camError.code === 'denied' && <p className="mt-2 text-xs leading-relaxed text-slate-400">The browser will not ask again once it has been blocked: allow the camera for this site in the address bar, then choose Try again.</p>}
+              </div>
             ) : (
               <>
                 <video ref={videoRef} playsInline muted className="h-full w-full object-cover" style={{ transform: facing === 'user' ? 'scaleX(-1)' : 'none' }} />
@@ -92,7 +101,9 @@ export default function LivePhotoCapture({ image, onImage, onBack, onNext, allow
               <button type="button" className="btn-secondary" onClick={() => onImage(null)}><RefreshCw className="h-4 w-4" />Retake</button>
             ) : (
               <>
-                <button type="button" className="btn-primary min-w-36" disabled={!ready || count > 0} onClick={snap}><Camera className="h-5 w-5" />Capture</button>
+                {camError && !['unsupported', 'insecure'].includes(camError.code)
+                  ? <button type="button" className="btn-primary min-w-36" onClick={() => setAttempt((a) => a + 1)}><RefreshCw className="h-4 w-4" />Try again</button>
+                  : <button type="button" className="btn-primary min-w-36" disabled={!ready || count > 0} onClick={snap}><Camera className="h-5 w-5" />Capture</button>}
                 <button type="button" className="btn-secondary" disabled={!ready || count > 0} onClick={captureWithCountdown} title="3-second timer"><Timer className="h-4 w-4" />Timer</button>
                 <button type="button" className="btn-secondary" onClick={() => setFacing((f) => (f === 'user' ? 'environment' : 'user'))}><SwitchCamera className="h-4 w-4" />Switch</button>
               </>
