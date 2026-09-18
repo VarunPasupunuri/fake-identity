@@ -88,6 +88,7 @@ const FIXTURES = {
     'GOVERNMENT OF DEMOLAND', 'OFFICE OF THE TAHSILDAR, SAMPLE TALUK', 'RESIDENCE CERTIFICATE', 'Certificate No.: DEMO-RC-2025-00731', 'Date of Issue: 2025-02-10', `Valid Until: ${sc === 'suspicious' ? '2025-08-09' : '2028-02-09'}`,
     sc === 'missing_fields' ? 'This is to certify that the applicant' : 'This is to certify that SUNIL DEMO PATEL', "Father's Name: MANOJ DEMO PATEL", 'Address: 7 SAMPLE STREET, SAMPLE TALUK', 'is a resident of Sample Taluk for the last 12 years.', 'Tahsildar, Sample Taluk', 'Seal',
   ].filter(Boolean).join('\n'),
+  pan_card: (sc) => ['GOVT OF INDIA', 'INCOME TAX DEPARTMENT', 'Permanent Account Number Card', sc === 'missing_fields' ? '' : 'ABCDE1234F', 'Name', 'PRIYA DEMO SHARMA', "Father's Name", 'RAJESH DEMO SHARMA', `Date of Birth\n${sc === 'inconsistent_dates' ? '01/01/2030' : '14/08/1996'}`, 'Signature'].filter(Boolean).join('\n'),
   voter_id: (sc) => ['ELECTION COMMISSION OF DEMOLAND', "ELECTOR'S PHOTO IDENTITY CARD", sc === 'missing_fields' ? '' : 'EPIC No. DEM1234567', 'Name: VIKRAM DEMO SINGH', "Father's Name: AJAY DEMO SINGH", 'Sex: M', `Date of Birth: ${sc === 'inconsistent_dates' ? '2015-01-01' : '1990-01-01'}`, 'Address: 3 TEST AVENUE, SAMPLE CITY'].filter(Boolean).join('\n'),
   aadhaar: (sc) => [
     'GOVERNMENT OF DEMOLAND', 'UNIQUE IDENTIFICATION AUTHORITY OF INDIA', 'AADHAAR',
@@ -142,6 +143,7 @@ export const DEMO_DOCUMENTS = Object.freeze([
   { value: 'aadhaar', label: 'Aadhaar / National ID (India)' },
   { value: 'driving_license', label: 'Driving licence' },
   { value: 'permit', label: 'Permit / travel authorisation' },
+  { value: 'pan_card', label: 'PAN card' },
   { value: 'voter_id', label: 'Voter ID' },
   { value: 'birth_certificate', label: 'Birth certificate' },
   { value: 'death_certificate', label: 'Death certificate' },

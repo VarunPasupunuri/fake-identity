@@ -50,6 +50,7 @@ export const SELECTOR_OPTIONS = Object.freeze([
   { value: 'visa', label: 'Visa' },
   { value: 'national_id', label: 'National ID' },
   { value: 'driving_license', label: 'Driving Licence' },
+  { value: 'pan_card', label: 'PAN Card' },
   { value: 'birth_certificate', label: 'Birth Certificate' },
   { value: 'death_certificate', label: 'Death Certificate' },
   { value: 'category:academic', label: 'Academic Document', hint: 'Marks memo, marksheet, degree, transcript, transfer or migration certificate.' },

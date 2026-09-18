@@ -13,6 +13,7 @@ import { classifyDocument, scoreProfileDetailed, WEAK_CAP, CLASSIFICATION_FLOOR 
 import { prepareText, fuzzyPhrase, editDistance } from './textNormalise.js';
 import { checkDocumentType, PREFLIGHT } from './preflight.js';
 import { getProfile, listProfiles } from './registry.js';
+import { extractFields } from './extract.js';
 
 const type = (rawText, mrz = null) => classifyDocument({ rawText, mrz }).type;
 
@@ -65,6 +66,18 @@ Valid From 01/01/2026
 Valid Until 31/12/2026
 Issuing Authority: District Magistrate
 Jurisdiction: SECTOR 4`,
+
+  pan_card: `GOVT OF INDIA
+INCOME TAX DEPARTMENT
+Permanent Account Number Card
+ABCDE1234F
+Name
+PRIYA DEMO SHARMA
+Father's Name
+RAJESH DEMO SHARMA
+Date of Birth
+14/08/1996
+Signature`,
 
   generic_document: `SAMPLE CITY WATER SUPPLY AUTHORITY
 ACKNOWLEDGEMENT OF HANDOVER
@@ -200,6 +213,9 @@ describe('selected vs detected — mismatch detection across all supported types
     ['permit', 'driving_license'],
     ['national_id', 'driving_license'],
     ['driving_license', 'national_id'],
+    ['passport', 'pan_card'],
+    ['pan_card', 'driving_license'],
+    ['national_id', 'pan_card'],
   ];
 
   for (const [selected, presented] of cases) {
@@ -296,6 +312,42 @@ describe('confidence reflects the evidence, and is not invented', () => {
 
   it('is zero when no signal fired at all', () => {
     expect(classifyDocument({ rawText: 'aaaa bbbb cccc dddd' }).confidence).toBe(0);
+  });
+});
+
+describe('PAN card', () => {
+  it('is detected from a bilingual card the way OCR returns it', () => {
+    // Devanagari lines come through untouched and must not prevent the English heading matching.
+    const bilingual = `GOVT OF INDIA
+\u0938\u094d\u0925\u093e\u092f\u0940 \u0932\u0947\u0916\u093e \u0938\u0902\u0916\u094d\u092f\u093e \u0915\u093e\u0930\u094d\u0921
+Permanent Account Number Card
+ABCDE1234F
+\u0928\u093e\u092e / Name
+PRIYA DEMO SHARMA
+\u091c\u0928\u094d\u092e \u0915\u0940 \u0924\u093e\u0930\u0940\u0916 / Date of Birth
+14/08/1996`;
+    expect(type(bilingual)).toBe('pan_card');
+  });
+
+  it('is detected when the heading is split across lines', () => {
+    expect(type('GOVT OF INDIA\nPermanent Account\nNumber Card\nABCDE1234F\nDate of Birth 14/08/1996')).toBe('pan_card');
+  });
+
+  it('reads the account number even though the card prints it with no label', () => {
+    const { fields } = extractFields(SAMPLES.pan_card, getProfile('pan_card'));
+    expect(fields.panNumber).toBe('ABCDE1234F');
+    expect(fields.fullName).toBe('PRIYA DEMO SHARMA');
+    expect(fields.dateOfBirth).toBe('1996-08-14');
+  });
+
+  it('does not take a labelled value that cannot be an account number', () => {
+    // "Permanent Account Number Card" would otherwise capture "CARD" as the value.
+    const { fields } = extractFields('Permanent Account Number Card\nABCDE1234F', getProfile('pan_card'));
+    expect(fields.panNumber).toBe('ABCDE1234F');
+  });
+
+  it('stays generic when almost nothing was recognised, rather than guessing PAN', () => {
+    expect(type('GOVT OF INDIA')).toBe('generic_document');
   });
 });
 

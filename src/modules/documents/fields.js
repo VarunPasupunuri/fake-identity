@@ -35,6 +35,9 @@ export const FIELDS = {
   issuingAuthority: { label: 'Issuing authority', kind: 'text', labels: ['ISSUING AUTHORITY', 'ISSUED BY', 'AUTHORITY', 'OFFICE OF (?:THE )?'] },
   vehicleClasses: { label: 'Vehicle classes', kind: 'list', labels: ['VEHICLE CLASS(?:ES)?', 'CLASS OF VEHICLE', 'COV', 'CATEGORIES?'] },
   bloodGroup: { label: 'Blood group', kind: 'text', labels: ['BLOOD GROUP', 'BG'] },
+  // A PAN is printed on its own line on most cards, so it also carries a `standalone`
+  // pattern: a distinctive identifier that extraction may find without a printed label.
+  panNumber: { label: 'Permanent Account Number', kind: 'identifier', labels: ['PERMANENT ACCOUNT NUMBER', 'PAN NO\\.?', 'PAN NUMBER', 'PAN'], standalone: /\b[A-Z]{5}[0-9]{4}[A-Z]\b/ },
   epicNumber: { label: 'Elector ID number', kind: 'identifier', labels: ['EPIC NO\\.?', 'ELECTOR\'?S? ID', 'ELECTOR ID NO\\.?', 'VOTER ID NO\\.?'] },
   fatherName: { label: "Father's / guardian's name", kind: 'name', labels: ["FATHER'?S? NAME", 'FATHER', "GUARDIAN'?S? NAME", "HUSBAND'?S? NAME", 'S/O', 'D/O', 'W/O'] },
   motherName: { label: "Mother's name", kind: 'name', labels: ["MOTHER'?S? NAME", 'MOTHER'] },

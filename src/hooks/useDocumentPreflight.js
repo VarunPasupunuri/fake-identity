@@ -65,7 +65,7 @@ export function useDocumentPreflight({ providers, useMock, scenario, mockDocumen
       // A failed preflight must never block a legitimate document.
       const r = {
         status: PREFLIGHT.UNAVAILABLE, blocking: false, selectedType: sel.type, selectedLabel: '', detectedType: null, detectedLabel: '',
-        confidence: 0, signals: [], classification: null,
+        confidence: 0, signals: [], alternatives: [], classification: null,
         title: 'Document type could not be checked',
         message: `The document type check could not run (${e?.message || 'unknown error'}). Screening can continue.`,
       };

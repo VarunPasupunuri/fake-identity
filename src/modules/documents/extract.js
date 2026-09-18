@@ -155,8 +155,18 @@ export function extractFields(rawText, profile, opts = {}) {
     const def = FIELDS[spec.key];
     if (!def || fields[spec.key] !== undefined) continue;
     if (def.kind === 'list') continue; // handled below
-    if (!def.labels?.length) continue;
-    const hit = grabLabelled(text, def.labels, def.kind);
+    if (!def.labels?.length && !def.standalone) continue;
+    // Some identifiers are printed on their own line with no label at all (a PAN, for
+    // example). A field may declare `standalone`: a pattern distinctive enough to find the
+    // value unaided. Where it exists it is also authoritative — a labelled capture that does
+    // not look like the value is a mis-parse ("Permanent Account Number Card" → "CARD"), so
+    // it is discarded in favour of the pattern.
+    const labelled = grabLabelled(text, def.labels || [], def.kind);
+    const hit = !def.standalone
+      ? labelled
+      : labelled && def.standalone.test(labelled.value)
+        ? labelled
+        : (() => { const m = text.match(def.standalone); return m ? { value: m[0], label: 'unlabelled', snippet: m[0] } : null; })();
     if (!hit) continue;
     const value = coerce(def.kind, hit.value);
     if (value !== null && value !== undefined && !(typeof value === 'number' && Number.isNaN(value))) set(spec.key, value, { label: hit.label, snippet: hit.snippet });
