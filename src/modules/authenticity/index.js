@@ -88,10 +88,8 @@ export const AUTH = Object.freeze({
   MAX_SCORE: 95,
   /** Independent signals over the same region reinforce each other by this factor. */
   CORRELATION_GAIN: 1.5,
-  /** OCR below this is too poor for its field values to be worth comparing.
-   *  Real passport photography (with glare, angles, variable lighting) often yields
-   *  25-30% confidence; 0.25 allows real-world documents while rejecting unreadable captures. */
-  MIN_OCR_FOR_FIELDS: 0.25,
+  /** OCR below this is too poor for its field values to be worth comparing. */
+  MIN_OCR_FOR_FIELDS: 0.35,
 });
 
 export const LIMITATION_PHYSICAL = 'Physical security features — holograms, watermarks, UV elements, intaglio printing, substrate and any chip — cannot be assessed from an image. A physical counterfeit that is internally consistent would not be detected by this analysis.';
