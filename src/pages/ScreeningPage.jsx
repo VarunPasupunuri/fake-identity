@@ -11,6 +11,7 @@ import DocumentUpload from '../components/screening/DocumentUpload.jsx';
 import LivePhotoCapture from '../components/screening/LivePhotoCapture.jsx';
 import ProcessingSteps from '../components/screening/ProcessingSteps.jsx';
 import VerdictView from '../components/screening/VerdictView.jsx';
+import EvidenceReport from '../components/screening/EvidenceReport.jsx';
 import { PageHeader } from '../components/ui/index.jsx';
 import { resolveProviders } from '../modules/registry.js';
 import { resolveSelection, getProfile, AUTO_DETECT } from '../modules/documents/registry.js';
@@ -151,9 +152,14 @@ export default function ScreeningPage() {
           <div className="animate-fade-in space-y-6">
             {saveError && <div className="alert alert-danger">{saveError}</div>}
             <VerdictView results={pipeline.results} images={{ document: docImage?.dataUrl }} />
+            {/* The evidence the verdict rests on, printable as the record of this
+                screening. No decision control belongs here — that is recorded on the
+                saved case — but the officer should not have to open the case to see,
+                or to print, what the assessment was actually based on. */}
+            <EvidenceReport results={pipeline.results} caseRef={screeningId || null} />
             {/* Navigation only. The officer records the decision on the saved case,
                 so the result screen itself carries nothing but the verdict. */}
-            <div className="flex flex-wrap items-center justify-center gap-3 pb-20 lg:pb-0">
+            <div className="no-print flex flex-wrap items-center justify-center gap-3 pb-20 lg:pb-0">
               <button type="button" className="btn-secondary" onClick={restart}><RotateCcw className="h-4 w-4" aria-hidden="true" />Screen another document</button>
               {screeningId && <Link to={`/history/${screeningId}`} className="btn-ghost">Open case</Link>}
             </div>
@@ -169,7 +175,7 @@ export default function ScreeningPage() {
 
 function Stepper({ step }) {
   return (
-    <ol className="grid grid-cols-4 gap-2" aria-label="Screening steps">
+    <ol className="no-print grid grid-cols-4 gap-2" aria-label="Screening steps">
       {STEPS.map((s, i) => {
         const state = i < step ? 'done' : i === step ? 'active' : 'todo';
         return (

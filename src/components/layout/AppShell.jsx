@@ -87,7 +87,7 @@ export default function AppShell() {
   return (
     <div className="flex min-h-dvh">
       {/* Desktop / tablet rail */}
-      <aside className={cx('sticky top-0 hidden h-dvh shrink-0 flex-col border-r divider bg-[var(--surface)] transition-[width] duration-150 md:flex', collapsed ? 'w-16' : 'w-60')}>
+      <aside className={cx('no-print sticky top-0 hidden h-dvh shrink-0 flex-col border-r divider bg-[var(--surface)] transition-[width] duration-150 md:flex', collapsed ? 'w-16' : 'w-60')}>
         <div className={cx('flex h-14 items-center border-b divider px-4', collapsed && 'justify-center px-0')}>
           {collapsed ? <LogoMark size={22} className="text-[var(--brand)]" /> : <Logo size="sm" />}
         </div>
@@ -109,7 +109,7 @@ export default function AppShell() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar: context, not chrome */}
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b divider bg-[var(--surface)] page-gutter">
+        <header className="no-print sticky top-0 z-30 flex h-14 items-center gap-2 border-b divider bg-[var(--surface)] page-gutter">
           <button className="btn-ghost btn-icon md:hidden" onClick={() => setOpen(true)} aria-label="Open navigation"><Menu className="h-5 w-5" aria-hidden="true" /></button>
           <span className="md:hidden"><Logo size="sm" /></span>
           <div className="ml-auto flex items-center gap-2">

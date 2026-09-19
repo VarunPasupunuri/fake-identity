@@ -10,6 +10,7 @@ import { formatDate, cx, RISK_STYLES } from '../../lib/format.js';
 import { DecisionPanel, WhyPanel, EvidenceFusionPanel, CorrelationsPanel, EvidenceChainPanel, CounterfactualPanel } from './FusionPanels.jsx';
 import { SignalsPanel, EvidenceGroupsPanel, LimitationsPanel, BarcodePanel, IdentityPanel, WatchlistPanel, WorkflowStrip, ModuleHeading, DetectionPanel } from './UniversalPanels.jsx';
 import { AuthenticityPanel, TamperingIndicatorsPanel, FieldConsistencyPanel } from './AuthenticityPanel.jsx';
+import EvidenceReport from './EvidenceReport.jsx';
 
 const DATE_FIELDS = new Set(DATE_FIELD_KEYS);
 const ID_FIELDS = new Set([...IDENTIFIER_FIELD_KEYS, 'documentNumber', 'visaNumber']);
@@ -70,6 +71,11 @@ export default function ResultsView({ results, images, children, linkBase = '/hi
         documentLabel={profile.label}
         verificationStatus={issuerStatusLabel(issuer)}
       />
+
+      {/* The evidence behind the assessment, collected on one page so it can be printed
+          as the record of this screening. A check that could not run is stated there as
+          NOT AVAILABLE rather than omitted. */}
+      {overview && <EvidenceReport results={results} caseRef={caseRef} />}
 
       {/* 2. Assessment, and the officer's decision. Deliberately separate from authenticity:
              a document with no tampering indicators can still need review (poor capture,
