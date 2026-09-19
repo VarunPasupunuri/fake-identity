@@ -111,7 +111,14 @@ function namesAgree(a, b) {
  * @returns {{ indicators: Object[], compared: Object[] }}
  *   `compared` is the full table (agreements included) so the UI can show what was checked.
  */
-export function compareRepresentations({ visual = {}, mrz = {}, barcode = {}, ocrConfidence = 1 } = {}) {
+/**
+ * @param {boolean} [mrzTrusted]  did the zone verify its own check digits? A zone that
+ *   did not was either altered or misread, and arithmetic cannot say which. Page-wide
+ *   confidence cannot stand in for this: the zone is read by its own pass, so a sharp
+ *   page with a soft zone reads "confident" while the zone's characters are wrong, and
+ *   every phantom disagreement that produces then accuses a genuine document.
+ */
+export function compareRepresentations({ visual = {}, mrz = {}, barcode = {}, ocrConfidence = 1, mrzTrusted = true } = {}) {
   const indicators = [];
   const compared = [];
   const available = { [SOURCE.VISUAL]: visual || {}, [SOURCE.MRZ]: mrz || {}, [SOURCE.BARCODE]: barcode || {} };
@@ -146,6 +153,21 @@ export function compareRepresentations({ visual = {}, mrz = {}, barcode = {}, oc
       }
     }
     const [a, b] = pairs[0];
+    // A zone that failed its own check digits was either altered or misread, and its
+    // values are not reliable enough to accuse the page with: a misread zone disagrees
+    // with the page about EVERY field at once, and five such disagreements accumulate
+    // past the tampering threshold on a document nobody touched. The altered-zone case
+    // is not lost — the checksum failure reports it, and reconstruction recovers what
+    // the zone actually encoded. An altered PAGE, the common forgery, leaves the zone
+    // intact and verifying, so it still compares and is still caught.
+    if (!mrzTrusted && pairs.some(([p, q]) => p.source === SOURCE.MRZ || q.source === SOURCE.MRZ)) {
+      compared[compared.length - 1] = {
+        field: spec.key, label: spec.label, status: 'not_compared',
+        reason: 'The machine readable zone did not verify its own check digits, so its value for this field is not reliable enough to compare against the page.',
+        values: values.map((v) => ({ source: v.source, value: v.raw })),
+      };
+      continue;
+    }
     const involvesBarcode = pairs.some(([p, q]) => p.source === SOURCE.BARCODE || q.source === SOURCE.BARCODE);
     const id = involvesBarcode && !pairs.some(([p, q]) => p.source === SOURCE.MRZ || q.source === SOURCE.MRZ)
       ? INDICATOR.BARCODE_FIELD_MISMATCH
@@ -166,7 +188,14 @@ export function compareRepresentations({ visual = {}, mrz = {}, barcode = {}, oc
       // such mismatch is on its own enough to cross the tampering threshold.
       riskContribution: (spec.severity === SEVERITY.HIGH ? 52 : 24) + extra * 8,
       // A mismatch read from poor OCR is less certain, but no less serious if real.
-      confidence: Math.max(0.35, Math.min(1, ocrConfidence)) * (extra ? 1 : 0.95),
+      // Where the disagreement rests on a zone that failed its own check digits, it is
+      // more likely a misread character than an edit, so it is held below the threshold
+      // at which an indicator can accuse on its own. Corroboration — forensics over the
+      // same field, or the printed page agreeing with the zone's reconstructed value —
+      // still raises it, which is how a genuinely altered zone is caught.
+      confidence: Math.max(0.35, Math.min(1, ocrConfidence))
+        * (extra ? 1 : 0.95)
+        * (!mrzTrusted && present.some((v) => v.source === SOURCE.MRZ) ? 0.5 : 1),
     }));
   }
 
@@ -434,17 +463,29 @@ export function checksumIndicators(mrzParsed, ocrConfidence = 1, visual = null) 
       evidence: { checks: mrzParsed.checks.map((c) => ({ id: c.id, ok: true })) },
     })];
   }
-  // OCR mis-reading one MRZ character also breaks a checksum, so a single failure is
-  // weaker evidence than several.
-  const many = failed.length > 1;
+  // How many failures there are does NOT say how likely an alteration is — if anything
+  // it says the opposite. Altering a field breaks that field's digit and the composite
+  // and leaves the rest verifying; blur, glare and a filler `<` read as K or 1 break
+  // digits wholesale. So a zone where most digits still verify was read correctly, and a
+  // remaining failure in it is a real inconsistency; a zone where most of them fail was
+  // not read correctly, and a misread zone is not evidence that anything was altered.
+  const nonComposite = mrzParsed.checks.filter((c) => c.id !== 'mrz_composite');
+  const verified = nonComposite.filter((c) => c.ok).length;
+  const readSound = nonComposite.length > 0 && verified > nonComposite.length / 2;
+  // Like image forensics, this is a heuristic over characters that may have been misread,
+  // so on its own it is capped below the tampering threshold. What makes an altered field
+  // serious is the same field disagreeing between the page and the zone, which is found by
+  // compareRepresentations and is not subject to this cap.
   return [...reconstructionIndicators(mrzParsed, visual, ocrConfidence), indicator({
     id: INDICATOR.MRZ_CHECKSUM_FAILURE,
     category: CATEGORY.MRZ,
-    severity: many ? SEVERITY.HIGH : SEVERITY.MEDIUM,
-    explanation: `${failed.length} of ${mrzParsed.checks.length} machine readable zone check digits do not verify (${failed.map((c) => c.label.toLowerCase()).join(', ')}). Either the encoded data was altered, or the zone was not read cleanly.`,
+    severity: readSound ? SEVERITY.MEDIUM : SEVERITY.LOW,
+    explanation: readSound
+      ? `${failed.length} of ${mrzParsed.checks.length} machine readable zone check digits do not verify (${failed.map((c) => c.label.toLowerCase()).join(', ')}), in a zone that otherwise reads cleanly. Either the encoded data was altered, or those characters were not read correctly.`
+      : `Only ${verified} of ${nonComposite.length} machine readable zone check digits verify, so the zone was not read cleanly enough to judge. This is a recognition failure, not an indication that the document was altered.`,
     field: 'mrz',
-    evidence: { failed: failed.map((c) => ({ id: c.id, value: c.value, expected: c.expected, actual: c.actual })) },
-    riskContribution: many ? 30 : 16,
-    confidence: Math.max(0.3, Math.min(1, ocrConfidence)) * (many ? 1 : 0.7),
+    evidence: { failed: failed.map((c) => ({ id: c.id, value: c.value, expected: c.expected, actual: c.actual })), verified, readSound },
+    riskContribution: readSound ? 22 : 8,
+    confidence: readSound ? Math.max(0.3, Math.min(1, ocrConfidence)) * 0.7 : 0.25,
   })];
 }

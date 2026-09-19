@@ -361,8 +361,12 @@ export function determineAuthenticity({ documentType = 'generic_document', ocr =
   // where `fields` is MRZ-seeded and comparing it with the MRZ would be circular), and the
   // extracted fields everywhere else, where those ARE the printed values.
   const printed = Object.keys(visual).length ? visual : fields;
+  // Comparing needs the PRINTED side to be readable, which is what the page-wide
+  // confidence measures — a reliable zone does not make a garbled page worth comparing
+  // against it, it would only manufacture disagreements. (A reliable zone does count as
+  // having read the document, which is a separate question, handled by textLegible.)
   const { indicators: fieldIndicators, compared } = legibleEnough
-    ? compareRepresentations({ visual: printed, mrz: mrzParsed?.fields || {}, barcode: encoded, ocrConfidence })
+    ? compareRepresentations({ visual: printed, mrz: mrzParsed?.fields || {}, barcode: encoded, ocrConfidence, mrzTrusted: mrzReliable })
     : { indicators: [], compared: [] };
   const crossChecked = compared.filter((c) => c.status !== 'not_compared').length;
 

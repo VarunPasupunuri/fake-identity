@@ -11,6 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import { determineAuthenticity, AUTHENTICITY, INDICATOR, CATEGORY, SEVERITY, INDICATOR_STATUS, compareRepresentations, AUTH } from './index.js';
 import { checksumIndicators, recoverFromCheckDigit } from './consistency.js';
+import { SEVERITY_RANK } from './indicators.js';
 import { tamperChecklist, tamperRegions, finalVerdict, VERDICT, CHECK_STATUS, TAMPER_CHECKS } from './report.js';
 import { analysePixels } from '../tampering/analysis.js';
 import { toGray, copyMove, aspectAnomaly, outliers, tile, noiseResidual } from '../tampering/forensics.js';
@@ -180,12 +181,62 @@ describe('MRZ integrity', () => {
     expect(out[0].explanation).toMatch(/does not establish that the document is genuine/i);
   });
 
-  it('a single failing check digit is weaker evidence than several', () => {
-    const one = checksumIndicators({ checks: [{ id: 'a', label: 'A', ok: false }, { id: 'b', label: 'B', ok: true }] }, 1)[0];
-    const many = checksumIndicators({ checks: [{ id: 'a', label: 'A', ok: false }, { id: 'b', label: 'B', ok: false }] }, 1)[0];
-    expect(many.riskContribution).toBeGreaterThan(one.riskContribution);
-    expect(one.severity).toBe(SEVERITY.MEDIUM);
-    expect(many.severity).toBe(SEVERITY.HIGH);
+  // How MANY digits fail does not say how likely an alteration is — it says the
+  // opposite. Altering a field breaks that field's digit and the composite and leaves
+  // the rest verifying; blur and a filler `<` misread as K break them wholesale. The
+  // earlier reading of this (many failures = HIGH, full confidence) called a genuine
+  // passport TAMPERED whenever the photograph was slightly soft.
+  const checksum = (checks, conf = 0.9) => checksumIndicators({ checks }, conf).find((i) => i.id === INDICATOR.MRZ_CHECKSUM_FAILURE);
+  const ZONE = (docNo, dob, expiry, composite) => [
+    { id: 'mrz_document_number', label: 'Document number', ok: docNo },
+    { id: 'mrz_date_of_birth', label: 'Date of birth', ok: dob },
+    { id: 'mrz_expiry', label: 'Expiry date', ok: expiry },
+    { id: 'mrz_composite', label: 'Composite', ok: composite },
+  ];
+
+  it('a failure in an otherwise clean zone is evidence; a zone that mostly fails is a bad read', () => {
+    const altered = checksum(ZONE(true, false, true, false));  // one field + composite
+    const misread = checksum(ZONE(false, false, true, false)); // sprayed across the zone
+    expect(altered.severity).toBe(SEVERITY.MEDIUM);
+    expect(misread.severity).toBe(SEVERITY.LOW);
+    expect(altered.riskContribution).toBeGreaterThan(misread.riskContribution);
+    expect(misread.explanation).toMatch(/not an indication that the document was altered/i);
+  });
+
+  it('a checksum failure alone never reaches the tampering threshold', () => {
+    // It is a heuristic over characters that may have been misread, so like image
+    // forensics it is capped below TAMPER_SEVERITY. What makes an altered field serious
+    // is the page and the zone disagreeing about it, which is found elsewhere.
+    for (const checks of [ZONE(true, false, true, false), ZONE(false, false, true, false)]) {
+      const i = checksum(checks, 1);
+      expect(SEVERITY_RANK[i.severity]).toBeLessThan(SEVERITY_RANK[AUTH.TAMPER_SEVERITY]);
+      expect(i.riskContribution * i.confidence).toBeLessThan(AUTH.TAMPER_PENALTY);
+    }
+  });
+
+  it('a zone that failed its check digits does not accuse the page it disagrees with', () => {
+    // Blur, glare and a filler `<` read as K corrupt the zone wholesale: it then fails
+    // its own arithmetic AND disagrees with the page about every field at once. That is
+    // one bad read, not six independent edits, and six disagreements accumulate past the
+    // tampering threshold — which called a genuine passport FAKE whenever the photograph
+    // was soft. Verified against the real OCR path, not only this fixture.
+    // Corrupt the DATA characters and leave the check digits: the document number, date
+    // of birth and expiry digits then all fail, which is what a misread zone looks like.
+    const l2 = MRZ.lines[1];
+    const misread = { ...MRZ, lines: [MRZ.lines[0], `Z9Q7X1K2M${l2[9]}${l2.slice(10, 13)}750220${l2[19]}${l2[20]}290101${l2.slice(27)}`] };
+    const r = analyse(passportOcr({}, { mrz: misread }));
+    expect(r.status).not.toBe(AUTHENTICITY.TAMPERED);
+    expect(r.compared.filter((c) => c.status === 'disagree')).toHaveLength(0);
+    expect(JSON.stringify(r.compared)).toMatch(/not reliable enough to compare/i);
+  });
+
+  it('but an intact zone still convicts a page whose printed date was changed', () => {
+    // The common forgery: the printed date is altered and the zone left alone, so the
+    // zone verifies and the two disagree about exactly one field. The protection above
+    // must not cost this, which is the whole purpose of the comparison.
+    const r = analyse(passportOcr({ dateOfBirth: '1988-11-05' }));
+    expect(r.status).toBe(AUTHENTICITY.TAMPERED);
+    expect(r.compared.find((c) => c.field === 'dateOfBirth').status).toBe('disagree');
   });
 
   it('a passport with no readable MRZ is not called tampered for it', () => {

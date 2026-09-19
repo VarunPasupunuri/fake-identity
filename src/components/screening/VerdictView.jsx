@@ -53,18 +53,13 @@ export default function VerdictView({ results, images }) {
       )}
 
       <p className="t-body"><span className="font-medium">Reason:</span> {reason}</p>
+      {/* No recognised text, confidence figure or partially-read zone is shown here.
+          Where the analysis could not read the document, those values are precisely the
+          ones that are wrong, and printing them presents mis-recognised characters and
+          dates the document does not carry as though they were findings about it. What
+          the officer can act on is the retake. */}
       {unreadable && (
-        <>
-          <p className="t-body-sm muted">Photograph the page straight on, filling the frame, with the two lines of code at the foot fully visible and in focus, then screen it again.</p>
-          {/* What the analysis actually managed to read. Shown only here, where the
-              verdict is that it read too little: without it "could not be read" gives
-              the officer nothing to act on and nobody anything to diagnose. */}
-          <dl className="rounded-sm hairline bg-[var(--surface-2)] p-3 t-code">
-            <div className="flex gap-2"><dt className="faint">Code at foot</dt><dd className="min-w-0 flex-1 break-all">{results?.ocr?.mrz ? results.ocr.mrz.lines.join('  ') : 'not found'}</dd></div>
-            <div className="mt-1 flex gap-2"><dt className="faint">Text read</dt><dd>{Math.round((results?.ocr?.confidence ?? 0) * 100)}% · page turned {results?.ocr?.orientation ?? 0}°</dd></div>
-            <div className="mt-1 flex gap-2"><dt className="faint">Dates found</dt><dd>{results?.ocr?.printedDates?.length ? results.ocr.printedDates.join(', ') : 'none'}</dd></div>
-          </dl>
-        </>
+        <p className="t-body-sm muted">Photograph the page straight on, filling the frame, with the two lines of code at the foot fully visible and in focus, then screen it again.</p>
       )}
     </div>
   );
