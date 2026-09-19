@@ -41,10 +41,12 @@ export function useDocumentPreflight({ providers, useMock, scenario, mockDocumen
     // as the text, and the pipeline reuses this pass rather than repeating it, so
     // reading a smaller image here would quietly downgrade the whole screening.
     const key = image.analysisUrl || image.dataUrl;
+    // In mock mode, the scenario affects the OCR result, so include it in the cache key
+    const cacheKey = useMock ? `${key}::${scenario}` : key;
     const sel = resolveSelection(selected);
 
     // Same image, already recognised → only the comparison needs redoing.
-    if (cache.current.imageKey === key && cache.current.ocr) {
+    if (cache.current.imageKey === cacheKey && cache.current.ocr) {
       const r = checkDocumentType({ selected, rawText: cache.current.ocr.rawText, mrz: cache.current.ocr.mrz });
       cache.current = { ...cache.current, result: r };
       if (id === runId.current) { setResult(r); setState('done'); }
@@ -63,7 +65,7 @@ export function useDocumentPreflight({ providers, useMock, scenario, mockDocumen
       });
       if (id !== runId.current) return null; // a newer image superseded this run
       const r = checkDocumentType({ selected, rawText: ocr?.rawText || '', mrz: ocr?.mrz || null });
-      cache.current = { state: 'done', result: r, ocr, imageKey: key };
+      cache.current = { state: 'done', result: r, ocr, imageKey: cacheKey };
       setResult(r); setState('done');
       return r;
     } catch (e) {
@@ -75,7 +77,7 @@ export function useDocumentPreflight({ providers, useMock, scenario, mockDocumen
         title: 'Document type could not be checked',
         message: `The document type check could not run (${e?.message || 'unknown error'}). Screening can continue.`,
       };
-      cache.current = { state: 'error', result: r, ocr: null, imageKey: key };
+      cache.current = { state: 'error', result: r, ocr: null, imageKey: cacheKey };
       setResult(r); setState('error');
       return r;
     }

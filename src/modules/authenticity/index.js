@@ -141,7 +141,7 @@ function forensicIndicators(tampering, profile) {
       category: isMeta ? CATEGORY.METADATA : CATEGORY.FORENSICS,
       severity,
       explanation: `${m.text}${f.detail ? ` Measured: ${f.detail}` : ''}`,
-      field: m.field,
+      field: f.field || m.field,
       region: f.region || null,
       evidence: { flag: f.id, type: f.type, providerSeverity: f.severity, detail: f.detail || null, provider: tampering.provider },
       riskContribution: isMeta ? 6 : severity === SEVERITY.MEDIUM ? 14 : 7,

@@ -16,6 +16,7 @@ import { resolveProviders } from '../modules/registry.js';
 import { resolveSelection, getProfile, AUTO_DETECT } from '../modules/documents/registry.js';
 import { DEMO_DOCUMENTS } from '../modules/documents/fixtures.js';
 import { SCENARIO_OPTIONS, scenarioProfile } from '../modules/documents/scenarios.js';
+import { generateMockDocumentImage } from '../modules/documents/mockImageGenerator.js';
 import { cx } from '../lib/format.js';
 
 /**
@@ -62,6 +63,19 @@ export default function ScreeningPage() {
     if (!docImage) { preflight.reset(); return; }
     preflight.check(docImage, documentType);
   }, [docImage, documentType, useMock, scenario, mockDocument]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Generate mock document image when sample mode is enabled and scenario changes.
+  useEffect(() => {
+    if (!useMock) { setDocImage(null); return; }
+    let live = true;
+    generateMockDocumentImage(mockDocument, scenario).then((img) => {
+      if (live) setDocImage(img);
+    }).catch((e) => {
+      console.error('Failed to generate mock document:', e);
+      if (live) setDocImage(null);
+    });
+    return () => { live = false; };
+  }, [useMock, scenario, mockDocument]);
 
   // Prior screenings power identity correlation; a failure here never blocks a screening.
   useEffect(() => {
