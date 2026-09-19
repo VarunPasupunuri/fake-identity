@@ -6,6 +6,16 @@ import LoginPage from './pages/LoginPage.jsx';
 import HomePage from './pages/HomePage.jsx';
 import { Spinner } from './components/ui/index.jsx';
 
+const PublicShell = lazy(() => import('./components/public/PublicShell.jsx'));
+const PublicHomePage = lazy(() => import('./pages/public/HomePage.jsx'));
+const AboutPage = lazy(() => import('./pages/public/AboutPage.jsx'));
+const HowItWorksPage = lazy(() => import('./pages/public/HowItWorksPage.jsx'));
+const FeaturesPage = lazy(() => import('./pages/public/FeaturesPage.jsx'));
+const SupportedDocumentsPage = lazy(() => import('./pages/public/SupportedDocumentsPage.jsx'));
+const SecurityPage = lazy(() => import('./pages/public/SecurityPage.jsx'));
+const FaqPage = lazy(() => import('./pages/public/FaqPage.jsx'));
+const ContactPage = lazy(() => import('./pages/public/ContactPage.jsx'));
+
 const ScreeningPage = lazy(() => import('./pages/ScreeningPage.jsx'));
 const HistoryPage = lazy(() => import('./pages/HistoryPage.jsx'));
 const ScreeningDetailPage = lazy(() => import('./pages/ScreeningDetailPage.jsx'));
@@ -21,7 +31,7 @@ function RequireAuth({ children, admin = false }) {
   const location = useLocation();
   if (loading) return <div className="flex min-h-dvh items-center justify-center"><Spinner className="h-6 w-6" /></div>;
   if (!user) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
-  if (admin && !isAdmin) return <Navigate to="/" replace />;
+  if (admin && !isAdmin) return <Navigate to="/dashboard" replace />;
   return children;
 }
 
@@ -29,9 +39,21 @@ export default function App() {
   return (
     <Suspense fallback={<Loading />}>
       <Routes>
+        {/* Public site. Reachable without signing in; the console lives under /dashboard. */}
+        <Route element={<PublicShell />}>
+          <Route index element={<PublicHomePage />} />
+          <Route path="about" element={<AboutPage />} />
+          <Route path="how-it-works" element={<HowItWorksPage />} />
+          <Route path="features" element={<FeaturesPage />} />
+          <Route path="supported-documents" element={<SupportedDocumentsPage />} />
+          <Route path="security" element={<SecurityPage />} />
+          <Route path="faq" element={<FaqPage />} />
+          <Route path="contact" element={<ContactPage />} />
+        </Route>
+
         <Route path="/login" element={<LoginPage />} />
         <Route element={<RequireAuth><AppShell /></RequireAuth>}>
-          <Route index element={<HomePage />} />
+          <Route path="dashboard" element={<HomePage />} />
           <Route path="screen" element={<ScreeningPage />} />
           <Route path="history" element={<HistoryPage />} />
           <Route path="history/:id" element={<ScreeningDetailPage />} />

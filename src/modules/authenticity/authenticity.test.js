@@ -1159,3 +1159,52 @@ describe('a name is the same name however it is written', () => {
     }
   });
 });
+
+/* ------------------------------------------------------------------ */
+describe('what is strong enough to call a document forged', () => {
+  const MRZ = buildTd3({ docCode: 'P<', issuingCountry: 'IND', surname: 'DEMO', givenNames: 'ANITA', documentNumber: 'X1234567', nationality: 'IND', dateOfBirth: '2006-11-03', gender: 'F', expiryDate: '2031-06-30' });
+  const read = (over = {}, mrz = MRZ) => {
+    const printed = { fullName: 'ANITA DEMO', documentNumber: 'X1234567', nationality: 'IND', dateOfBirth: '2006-11-03', expiryDate: '2031-06-30', gender: 'F', ...over };
+    return { confidence: 0.9, rawText: 'R'.repeat(300), fields: printed, vizFields: { ...printed }, mrz, provider: 'tesseract' };
+  };
+  const run = (over, mrz, tampering = CLEAN_IMAGE, face) => determineAuthenticity({ documentType: 'passport', ocr: read(over, mrz), tampering, face });
+
+  it('a name that differs is reported but never forged on its own', () => {
+    // Nothing corroborates a name: no check digit covers the zone's name line, and
+    // it is the field recognition damages most. A genuine document must not be
+    // called forged because its name came back transliterated or speckled.
+    const r = run({ fullName: 'PRIYA DEMO' });
+    expect(r.status).not.toBe(AUTHENTICITY.TAMPERED);
+    const hit = r.indicators.find((i) => i.id === INDICATOR.VISUAL_MRZ_NAME_MISMATCH);
+    expect(hit.status).toBe(INDICATOR_STATUS.DETECTED);   // still reported
+    expect(hit.severity).toBe(SEVERITY.MEDIUM);           // never on its own decisive
+  });
+
+  it('nor when the zone returned the padding as letters stuck to the name', () => {
+    const speckled = { ...MRZ, lines: ['P<INDDEMO<<ANITAKKCCLKCLC<<<<<<<<<<<<<<<<<<<', MRZ.lines[1]] };
+    expect(run({}, speckled).status).not.toBe(AUTHENTICITY.TAMPERED);
+  });
+
+  it('nationality or sex alone is likewise not enough', () => {
+    expect(run({ nationality: 'USA' }).status).not.toBe(AUTHENTICITY.TAMPERED);
+    expect(run({ gender: 'M' }).status).not.toBe(AUTHENTICITY.TAMPERED);
+  });
+
+  it('but an altered date of birth, number or expiry still is', () => {
+    expect(run({ dateOfBirth: '2006-11-05' }).status).toBe(AUTHENTICITY.TAMPERED);
+    expect(run({ documentNumber: 'X7654321' }).status).toBe(AUTHENTICITY.TAMPERED);
+    expect(run({ expiryDate: '2035-06-30' }).status).toBe(AUTHENTICITY.TAMPERED);
+  });
+
+  it('and so is a portrait that both looks composited and belongs to someone else', () => {
+    const photo = { score: 40, provider: 'local-ela', evidence: {}, flags: [{ id: 'ela_0', type: 'photo_replacement', severity: 'medium', label: 'Possible photo replacement', detail: 'x', region: { x: 0.06, y: 0.25, w: 0.24, h: 0.42 }, field: 'photo' }] };
+    const r = run({}, MRZ, photo, { similarity: 0.29, match: false, status: 'no_match' });
+    expect(r.status).toBe(AUTHENTICITY.TAMPERED);
+  });
+
+  it('and a zone whose check digit contradicts the value beside it', () => {
+    const edited = { format: 'TD3', lines: ['P<INDDEMO<<ANITA<<<<<<<<<<<<<<<<<<<<<<<<<<<<', 'AM630833<1IND0611059M36010731066100677725<02'] };
+    const ocr = { confidence: 0.82, rawText: 'R'.repeat(300), fields: {}, vizFields: {}, printedDates: ['2006-11-05'], mrz: edited, provider: 'tesseract' };
+    expect(determineAuthenticity({ documentType: 'passport', ocr, tampering: CLEAN_IMAGE }).status).toBe(AUTHENTICITY.TAMPERED);
+  });
+});

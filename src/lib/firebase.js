@@ -47,4 +47,4 @@ export async function callFunction(name, payload) {
   return res.data;
 }
 
-export const CHECKPOINT_ID = env.VITE_CHECKPOINT_ID || 'CP-DEMO-01';
+export const CHECKPOINT_ID = env.VITE_CHECKPOINT_ID || '';

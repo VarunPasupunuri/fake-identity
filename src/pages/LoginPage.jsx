@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
-import { DEMO_USERS } from '../services/auth.js';
+import { LOCAL_ACCOUNTS } from '../services/auth.js';
 import { useToast } from '../context/ToastContext.jsx';
 import Logo, { LogoMark, PRODUCT_TAGLINE } from '../components/brand/Logo.jsx';
 import { Alert } from '../components/ui/index.jsx';
@@ -24,7 +24,7 @@ export default function LoginPage() {
     try {
       const u = await signIn(email, password);
       toast.success(`Signed in as ${u.displayName || u.email}`);
-      navigate(location.state?.from || '/', { replace: true });
+      navigate(location.state?.from || '/dashboard', { replace: true });
     } catch (err) {
       setError(err.code === 'auth/invalid-credential' ? 'Invalid email or password.' : err.message);
     } finally { setBusy(false); }
@@ -65,13 +65,13 @@ export default function LoginPage() {
           </form>
           {isDemoMode && (
             <div className="mt-6 border-t divider pt-5">
-              <p className="t-label">Demo environment</p>
-              <p className="mt-1 t-caption">Firebase is not configured. Use a demonstration account (password <span className="t-code">demo1234</span>).</p>
+              <p className="t-label">Sign in to this workstation</p>
+              <p className="mt-1 t-caption">No authentication service is connected, so sign-in is served by this workstation. Choose the role to continue as.</p>
               <ul className="mt-3 divide-y divider hairline rounded-md">
-                {DEMO_USERS.map((u) => (
+                {LOCAL_ACCOUNTS.map((u) => (
                   <li key={u.uid}>
                     <button type="button" className="flex w-full items-center justify-between px-3 py-2.5 text-left text-sm hover:bg-[var(--surface-2)]" onClick={() => { setEmail(u.email); setPassword(u.password); }}>
-                      <span><span className="block font-medium">{u.displayName}</span><span className="block t-code muted">{u.email}</span></span><span className="badge badge-neutral">{u.role}</span>
+                      <span className="font-medium">{u.displayName}</span><span className="badge badge-neutral">{u.role}</span>
                     </button>
                   </li>
                 ))}

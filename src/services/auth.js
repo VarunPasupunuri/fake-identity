@@ -13,19 +13,28 @@ import { setStorageTokenProvider } from './storage.js';
 // Supabase Storage authenticates with the Firebase ID token (third-party auth).
 if (!isDemoMode) setStorageTokenProvider(async () => (auth?.currentUser ? auth.currentUser.getIdToken() : null));
 
-export const DEMO_USERS = [
-  { uid: 'demo-officer', email: 'officer@demo.gov', password: 'demo1234', displayName: 'Officer R. Singh', role: 'officer', checkpoint: 'CP-DEMO-01' },
-  { uid: 'demo-admin', email: 'admin@demo.gov', password: 'demo1234', displayName: 'Admin S. Iyer', role: 'admin', checkpoint: 'HQ' },
+/**
+ * Local accounts used when no authentication backend is configured.
+ *
+ * Deliberately not people: an invented officer with an invented posting reads as
+ * a real record of a real person, and this product must never put one on screen
+ * that an operator could mistake for their own. These are roles, named as roles.
+ */
+export const LOCAL_ACCOUNTS = [
+  { uid: 'local-officer', email: 'officer@identitysentinel.local', password: 'sentinel', displayName: 'Verification Officer', role: 'officer', checkpoint: '' },
+  { uid: 'local-admin', email: 'admin@identitysentinel.local', password: 'sentinel', displayName: 'Administrator', role: 'admin', checkpoint: '' },
 ];
+
+
 
 const DEMO_SESSION_KEY = 'session';
 
 export function subscribeAuth(cb) {
   if (isDemoMode) {
     const uid = demoStore.get(DEMO_SESSION_KEY, 'current')?.uid;
-    const u = DEMO_USERS.find((x) => x.uid === uid);
+    const u = LOCAL_ACCOUNTS.find((x) => x.uid === uid);
     cb(u ? publicUser(u) : null);
-    const handler = () => { const id = demoStore.get(DEMO_SESSION_KEY, 'current')?.uid; const uu = DEMO_USERS.find((x) => x.uid === id); cb(uu ? publicUser(uu) : null); };
+    const handler = () => { const id = demoStore.get(DEMO_SESSION_KEY, 'current')?.uid; const uu = LOCAL_ACCOUNTS.find((x) => x.uid === id); cb(uu ? publicUser(uu) : null); };
     window.addEventListener('demo-auth', handler);
     return () => window.removeEventListener('demo-auth', handler);
   }
@@ -58,7 +67,7 @@ export function appRoleFromClaims(claims = {}) {
 
 export async function signIn(email, password) {
   if (isDemoMode) {
-    const u = DEMO_USERS.find((x) => x.email === email.trim().toLowerCase() && x.password === password);
+    const u = LOCAL_ACCOUNTS.find((x) => x.email === email.trim().toLowerCase() && x.password === password);
     if (!u) throw new Error('Invalid credentials. Use one of the demo accounts shown below.');
     demoStore.clear(DEMO_SESSION_KEY);
     demoStore.insert(DEMO_SESSION_KEY, { id: 'current', uid: u.uid });
@@ -79,7 +88,7 @@ export async function signOut() {
 }
 
 export async function listUsers() {
-  if (isDemoMode) return DEMO_USERS.map(publicUser);
+  if (isDemoMode) return LOCAL_ACCOUNTS.map(publicUser);
   const snap = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(200)));
   return snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
 }
@@ -87,7 +96,7 @@ export async function listUsers() {
 /** Admin: change a user's role (and optionally checkpoint). Demo mode updates the in-memory list. */
 export async function setUserRole(uid, role, checkpoint) {
   if (isDemoMode) {
-    const u = DEMO_USERS.find((x) => x.uid === uid);
+    const u = LOCAL_ACCOUNTS.find((x) => x.uid === uid);
     if (u) { u.role = role; if (checkpoint) u.checkpoint = checkpoint; }
     return { ok: true };
   }

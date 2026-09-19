@@ -64,7 +64,7 @@ export default function ProcessingSteps({ steps, providers, documentImage }) {
           <dl className="t-body-sm">
             {[['01 Extraction', providers?.ocr], ['03 Integrity', providers?.tamper], ['04 Face', providers?.face], ['QR / barcode', providers?.barcode], ['Watchlist', providers?.watchlist], ['Issuer', providers?.issuer]].map(([k, v]) => <div key={k} className="flex justify-between py-0.5"><dt className="muted">{k}</dt><dd className="t-code">{v || '—'}</dd></div>)}
           </dl>
-          {providers?.ocr === 'mock' && <p className="mt-2"><Badge tone="warn" dot>Demonstration data</Badge></p>}
+          {providers?.ocr === 'mock' && <p className="mt-2"><Badge tone="warn" dot>Sample document — not a live capture</Badge></p>}
         </div>
         <div>
           <p className="t-label mb-1">Activity</p>

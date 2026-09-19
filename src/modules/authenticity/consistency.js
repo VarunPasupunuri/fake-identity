@@ -32,7 +32,13 @@ const COMPARABLE = [
   { key: 'dateOfBirth', label: 'Date of birth', severity: SEVERITY.HIGH, id: INDICATOR.VISUAL_MRZ_DOB_MISMATCH, kind: 'date' },
   { key: 'documentNumber', label: 'Document number', severity: SEVERITY.HIGH, id: INDICATOR.VISUAL_MRZ_PASSPORT_NUMBER_MISMATCH, kind: 'id' },
   { key: 'expiryDate', label: 'Expiry date', severity: SEVERITY.HIGH, id: INDICATOR.VISUAL_MRZ_EXPIRY_MISMATCH, kind: 'date' },
-  { key: 'fullName', label: 'Name', severity: SEVERITY.HIGH, id: INDICATOR.VISUAL_MRZ_NAME_MISMATCH, kind: 'name' },
+  // The name disagreeing is real evidence, but it is the one field nothing can
+  // corroborate: no check digit covers the zone's name line, and it is the field
+  // recognition damages most — transliterated, truncated to fit, and returned with
+  // the padding after it speckled into letters that stick to the last word. A name
+  // that differs is therefore reported and counted, but never enough on its own to
+  // call a document forged; a date, a number or an expiry that differs still is.
+  { key: 'fullName', label: 'Name', severity: SEVERITY.MEDIUM, id: INDICATOR.VISUAL_MRZ_NAME_MISMATCH, kind: 'name' },
   { key: 'nationality', label: 'Nationality', severity: SEVERITY.MEDIUM, id: INDICATOR.VISUAL_MRZ_NATIONALITY_MISMATCH, kind: 'code' },
   { key: 'gender', label: 'Sex', severity: SEVERITY.MEDIUM, id: INDICATOR.VISUAL_MRZ_SEX_MISMATCH, kind: 'code' },
 ];

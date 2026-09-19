@@ -109,11 +109,11 @@ export default function ScreeningPage() {
       <PageHeader title="Screen document" subtitle="Capture or upload one document, then review the authenticity result and record a decision."
         actions={step < 2 && (
           <div className="flex flex-wrap items-center gap-2 t-body-sm">
-            <label className="flex min-h-9 cursor-pointer items-center gap-2 rounded-md hairline px-3"><input type="checkbox" checked={useMock} onChange={(e) => setUseMock(e.target.checked)} className="h-4 w-4 accent-[var(--brand)]" /><FlaskConical className="h-4 w-4 faint" aria-hidden="true" />Demonstration data</label>
-            {useMock && <select className="input input-sm w-auto" aria-label="Demonstration document" value={mockDocument} onChange={(e) => setMockDocument(e.target.value)}>{DEMO_DOCUMENTS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}</select>}
+            <label className="flex min-h-9 cursor-pointer items-center gap-2 rounded-md hairline px-3"><input type="checkbox" checked={useMock} onChange={(e) => setUseMock(e.target.checked)} className="h-4 w-4 accent-[var(--brand)]" /><FlaskConical className="h-4 w-4 faint" aria-hidden="true" />Sample documents</label>
+            {useMock && <select className="input input-sm w-auto" aria-label="Sample document type" value={mockDocument} onChange={(e) => setMockDocument(e.target.value)}>{DEMO_DOCUMENTS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}</select>}
             {useMock && (
-              <select className="input input-sm w-auto" aria-label="Demonstration scenario" value={scenario} onChange={(e) => setScenario(e.target.value)}>
-                <optgroup label="Border screening cases">{SCENARIO_OPTIONS.filter((o) => o.sih).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</optgroup>
+              <select className="input input-sm w-auto" aria-label="Sample case" value={scenario} onChange={(e) => setScenario(e.target.value)}>
+                <optgroup label="Screening cases">{SCENARIO_OPTIONS.filter((o) => o.sih).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</optgroup>
                 <optgroup label="Document quality cases">{SCENARIO_OPTIONS.filter((o) => !o.sih).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</optgroup>
               </select>
             )}
@@ -123,7 +123,7 @@ export default function ScreeningPage() {
 
       {useMock && step < 2 && (
         <p className="-mt-2 mb-4 t-caption muted">
-          <span className="font-medium text-[var(--ink)]">Demonstration data.</span> {scenarioProfile(scenario).summary} Designed to produce <span className="font-medium text-[var(--ink)]">{scenarioProfile(scenario).expected}</span>; the assessment is still derived from the evidence.
+          <span className="font-medium text-[var(--ink)]">Sample document.</span> {scenarioProfile(scenario).summary} Designed to produce <span className="font-medium text-[var(--ink)]">{scenarioProfile(scenario).expected}</span>; the assessment is still derived from the evidence.
         </p>
       )}
 

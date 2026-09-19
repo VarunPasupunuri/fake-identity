@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { ScanLine, History, LayoutDashboard, LogOut, Menu, X, Settings, Sun, Moon, WifiOff, ChevronsLeft, ChevronsRight, FolderSearch, FileText, ShieldCheck, FlaskConical, MoreHorizontal } from 'lucide-react';
+import { ScanLine, History, LayoutDashboard, LogOut, Menu, X, Settings, Sun, Moon, WifiOff, ChevronsLeft, ChevronsRight, FolderSearch, FileText, ShieldCheck, MoreHorizontal } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useTheme } from '../../context/ThemeContext.jsx';
@@ -10,7 +10,7 @@ import { cx } from '../../lib/format.js';
 
 /** Workflow-ordered navigation. `group` separates operations from system sections. */
 const NAV = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true, group: 'Operations', mobile: true },
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true, group: 'Operations', mobile: true },
   { to: '/screen', label: 'Screen document', short: 'Screen', icon: ScanLine, group: 'Operations', mobile: true, kbd: 'N' },
   { to: '/history', label: 'Screening history', short: 'History', icon: History, group: 'Operations', mobile: true },
   { to: '/investigations', label: 'Investigations', short: 'Cases', icon: FolderSearch, group: 'Operations', mobile: true },
@@ -22,7 +22,7 @@ const NAV = [
 const NAV_KEY = 'identity-sentinel:nav';
 
 export default function AppShell() {
-  const { user, isAdmin, signOut, isDemoMode } = useAuth();
+  const { user, isAdmin, signOut } = useAuth();
   const { isDark, toggle } = useTheme();
   const { settings } = useSettings();
   const navigate = useNavigate();
@@ -77,7 +77,7 @@ export default function AppShell() {
     <div className="border-t divider p-3">
       <div className={cx('flex items-center gap-2.5', collapsed && !mobile && 'justify-center')}>
         <Avatar name={user?.displayName} size="sm" />
-        {(!collapsed || mobile) && <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{user?.displayName}</p><p className="truncate t-caption">{user?.role} · {settings.checkpoint}</p></div>}
+        {(!collapsed || mobile) && <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{user?.displayName}</p><p className="truncate t-caption">{[user?.role, settings.checkpoint].filter(Boolean).join(' · ')}</p></div>}
         {(!collapsed || mobile) && <button onClick={onSignOut} className="btn-ghost btn-icon" title="Sign out" aria-label="Sign out"><LogOut className="h-4 w-4" aria-hidden="true" /></button>}
       </div>
       {!mobile && <button onClick={() => setCollapsed((c) => !c)} className="mt-2 flex w-full items-center justify-center gap-2 rounded-sm py-1.5 t-caption hover:bg-[var(--surface-2)]" aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}>{collapsed ? <ChevronsRight className="h-4 w-4" aria-hidden="true" /> : <><ChevronsLeft className="h-4 w-4" aria-hidden="true" />Collapse</>}</button>}
@@ -114,8 +114,7 @@ export default function AppShell() {
           <span className="md:hidden"><Logo size="sm" /></span>
           <div className="ml-auto flex items-center gap-2">
             {!online && <span className="badge badge-danger"><WifiOff className="h-3.5 w-3.5" aria-hidden="true" /><span className="hidden sm:inline">Offline</span></span>}
-            {isDemoMode && <span className="badge badge-warn"><FlaskConical className="h-3.5 w-3.5" aria-hidden="true" /><span className="hidden sm:inline">Demo environment</span></span>}
-            <span className="hidden t-caption sm:inline">Checkpoint <span className="t-code text-[var(--ink)]">{settings.checkpoint}</span></span>
+            {settings.checkpoint && <span className="hidden t-caption sm:inline">Workstation <span className="t-code text-[var(--ink)]">{settings.checkpoint}</span></span>}
             <button onClick={toggle} className="btn-ghost btn-icon" aria-label="Toggle theme" title="Toggle theme">{isDark ? <Sun className="h-4 w-4" aria-hidden="true" /> : <Moon className="h-4 w-4" aria-hidden="true" />}</button>
           </div>
         </header>
