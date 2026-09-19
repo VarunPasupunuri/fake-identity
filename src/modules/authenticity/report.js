@@ -123,31 +123,31 @@ export function failedChecks(authenticity) {
 export const VERDICT = Object.freeze({
   ORIGINAL: 'ORIGINAL / REAL',
   TAMPERED: 'TAMPERED / FAKE',
-  UNREADABLE: 'COULD NOT BE READ',
 });
 
 /**
- * The verdict the final screen shows.
+ * The verdict the final screen shows: TAMPERED / FAKE, or ORIGINAL / REAL.
  *
  * TAMPERED / FAKE requires a positive determination — evidence the engine judged
- * serious enough to accuse the document. ORIGINAL / REAL requires the opposite:
- * that the document was actually examined and nothing was found.
+ * serious enough to accuse the document. Everything else reads ORIGINAL / REAL.
  *
- * A capture the engine could not read earns neither. Saying ORIGINAL / REAL there
- * reports "we could not look" as "we looked and it is genuine", which is the one
- * answer a screening tool must never give: it passes a forgery on the strength of
- * a bad photograph. It is not an accusation either — an unreadable document is not
- * a fake one — so it is reported as what it is, with the retake as the next step.
+ * KNOWN TRADE-OFF, made deliberately at the product owner's instruction. A capture
+ * the engine could not read reaches ORIGINAL / REAL here, which states "we looked
+ * and found nothing" about a document that was never legible. A forgery presented
+ * as a photograph too poor to analyse therefore passes. The engine still records
+ * the distinction — determineAuthenticity returns INSUFFICIENT with coverage and a
+ * populated `reasons`, and `authenticity.status` remains the honest answer for
+ * history, export and any later review — but the headline no longer carries it.
+ * Restoring the third outcome is a change to this function alone.
  *
  * Nothing here is document-specific: the verdict follows the indicator list, and
  * the sentence is whatever the engine derived from the evidence it had.
  *
  * @param {Object|null} authenticity  result of determineAuthenticity()
- * @returns {{ tampered: boolean, unreadable: boolean, headline: string, reason: string, regions: Object[] }}
+ * @returns {{ tampered: boolean, headline: string, reason: string, regions: Object[] }}
  */
 export function finalVerdict(authenticity) {
   const tampered = authenticity?.status === AUTHENTICITY.TAMPERED;
-  const unreadable = !tampered && (!authenticity || authenticity.status === AUTHENTICITY.INSUFFICIENT);
   // Only the regions that carry the finding. A tampered document usually also
   // shows weaker marks elsewhere — compression noise around the portrait, an
   // edge the camera softened — and boxing those alongside the alteration buries
@@ -160,8 +160,7 @@ export function finalVerdict(authenticity) {
   const regions = found.filter((r) => r.tone === top).map((r) => ({ ...r, tone: 'high' }));
   return {
     tampered,
-    unreadable,
-    headline: tampered ? VERDICT.TAMPERED : unreadable ? VERDICT.UNREADABLE : VERDICT.ORIGINAL,
+    headline: tampered ? VERDICT.TAMPERED : VERDICT.ORIGINAL,
     reason: authenticity?.summary || 'No analysis was produced for this document.',
     regions,
   };

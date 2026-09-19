@@ -54,6 +54,8 @@ const MRZ_CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<';
  * Ordered by how often each holds the zone, and the search stops at the first
  * well-formed result, so the common tight crop still costs one pass.
  */
+/** The whole page, flattened to high contrast and enlarged, for a second reading. */
+const PAGE_ENHANCE = { top: 0, height: 1, scale: 2, enhance: true };
 const MRZ_BANDS = [
   { top: 0.62, height: 0.38, scale: 2, enhance: true }, // tight crop of the data page
   { top: 0.78, height: 0.22, scale: 3, enhance: true }, // zone at the very foot, enlarged further
@@ -182,6 +184,25 @@ export async function extract({ imageDataUrl, documentType = 'passport', onProgr
     const reading = { degrees, image, rawText, parsed, confidence };
     if (!best || score(parsed, confidence) > score(best.parsed, best.confidence)) best = reading;
     if (parsed.mrz) break;
+  }
+
+  // A photographed page carries the colour of whatever it was lying on, the shadow of
+  // the hand holding it, and paper that is off-white rather than white. Recognition
+  // works on the difference between ink and paper, so flattening the page to high
+  // contrast and enlarging it recovers text that a raw pass reads as noise — the same
+  // treatment the zone's own strip already gets, and the reason that strip reads when
+  // the page does not. Tried only when the raw pass found no zone: a clean scan gains
+  // nothing from it, and the pass is not free. Kept only if it actually reads better.
+  if (!best.parsed.mrz) {
+    try {
+      onProgress?.(0.6, 'Enhancing the page and reading again');
+      const enhanced = await cropBand(best.image, PAGE_ENHANCE);
+      const { data } = await serialised(() => worker.recognize(enhanced));
+      const rawText = data.text || '';
+      const parsed = parseFields(rawText, documentType);
+      const confidence = Math.max(0, Math.min(1, (data.confidence || 0) / 100));
+      if (score(parsed, confidence) > score(best.parsed, best.confidence)) best = { ...best, rawText, parsed, confidence };
+    } catch { /* the raw reading stands */ }
   }
 
   let { mrz } = best.parsed;

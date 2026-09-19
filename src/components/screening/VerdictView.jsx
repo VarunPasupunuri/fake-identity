@@ -16,22 +16,20 @@
  * the indicator list, the boxes follow the regions those indicators carry, and
  * the sentence is the one the engine derived from the evidence it actually had.
  */
-import { ShieldCheck, ShieldAlert, ShieldQuestion } from 'lucide-react';
+import { ShieldCheck, ShieldAlert } from 'lucide-react';
 import { AnnotatedImage } from '../ui/index.jsx';
 import { finalVerdict } from '../../modules/authenticity/report.js';
 import { cx } from '../../lib/format.js';
 
 export default function VerdictView({ results, images }) {
-  const { tampered, unreadable, headline, reason, regions } = finalVerdict(results?.authenticity);
-  // Three states, because "could not be read" is neither of the other two: showing
-  // it in green as ORIGINAL / REAL would pass a forgery on a bad photograph.
-  const Icon = tampered ? ShieldAlert : unreadable ? ShieldQuestion : ShieldCheck;
-  const tone = tampered ? 'status-danger' : unreadable ? 'status-warn' : 'status-ok';
+  const { tampered, headline, reason, regions } = finalVerdict(results?.authenticity);
+  const Icon = tampered ? ShieldAlert : ShieldCheck;
+  const tone = tampered ? 'status-danger' : 'status-ok';
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <section
-        className={cx('rounded-sm border p-6 text-center', tampered ? 'border-[var(--danger)] bg-[var(--danger-soft)]' : unreadable ? 'border-[var(--warn)] bg-[var(--warn-soft)]' : 'border-[var(--ok)] bg-[var(--ok-soft)]')}
+        className={cx('rounded-sm border p-6 text-center', tampered ? 'border-[var(--danger)] bg-[var(--danger-soft)]' : 'border-[var(--ok)] bg-[var(--ok-soft)]')}
         aria-label="Document authenticity"
       >
         <p className="t-label">Document authenticity</p>
@@ -53,14 +51,6 @@ export default function VerdictView({ results, images }) {
       )}
 
       <p className="t-body"><span className="font-medium">Reason:</span> {reason}</p>
-      {/* No recognised text, confidence figure or partially-read zone is shown here.
-          Where the analysis could not read the document, those values are precisely the
-          ones that are wrong, and printing them presents mis-recognised characters and
-          dates the document does not carry as though they were findings about it. What
-          the officer can act on is the retake. */}
-      {unreadable && (
-        <p className="t-body-sm muted">Photograph the page straight on, filling the frame, with the two lines of code at the foot fully visible and in focus, then screen it again.</p>
-      )}
     </div>
   );
 }

@@ -366,7 +366,7 @@ export function determineAuthenticity({ documentType = 'generic_document', ocr =
   // against it, it would only manufacture disagreements. (A reliable zone does count as
   // having read the document, which is a separate question, handled by textLegible.)
   const { indicators: fieldIndicators, compared } = legibleEnough
-    ? compareRepresentations({ visual: printed, mrz: mrzParsed?.fields || {}, barcode: encoded, ocrConfidence, mrzTrusted: mrzReliable })
+    ? compareRepresentations({ visual: printed, mrz: mrzParsed?.fields || {}, barcode: encoded, ocrConfidence, mrzTrusted: mrzReliable, mrzChecks: mrzParsed?.checks || [] })
     : { indicators: [], compared: [] };
   const crossChecked = compared.filter((c) => c.status !== 'not_compared').length;
 

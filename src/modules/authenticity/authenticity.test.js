@@ -899,16 +899,26 @@ describe('the final verdict is binary', () => {
     }
   });
 
-  it('every state lands on exactly one of the three, and on the right one', () => {
+  it('every state lands on one of the two, and only tampering lands on FAKE', () => {
     const cases = [
       [analyse(passportOcr()), VERDICT.ORIGINAL],
       [analyse(passportOcr({ dateOfBirth: '2006-11-05' })), VERDICT.TAMPERED],
-      // Examined, nothing found, but not every check could run — still not an accusation.
+      // Examined, nothing found, but not every check could run — not an accusation.
       [determineAuthenticity({ documentType: 'passport', ocr: passportOcr(), tampering: null }), VERDICT.ORIGINAL],
-      // Nothing could be examined at all: neither genuine nor fake is claimed.
-      [determineAuthenticity({ documentType: 'passport', ocr: null, tampering: null }), VERDICT.UNREADABLE],
+      // Nothing could be examined at all. By product decision this reads ORIGINAL / REAL
+      // rather than a third outcome; the engine still records INSUFFICIENT underneath.
+      [determineAuthenticity({ documentType: 'passport', ocr: null, tampering: null }), VERDICT.ORIGINAL],
     ];
     for (const [r, expected] of cases) expect(finalVerdict(r).headline).toBe(expected);
+  });
+
+  it('the engine still records insufficiency even though the headline no longer shows it', () => {
+    // The headline is a projection. History, export and any later review read `status`,
+    // which must stay honest about a document that was never legible.
+    const r = determineAuthenticity({ documentType: 'passport', ocr: null, tampering: null });
+    expect(r.status).toBe(AUTHENTICITY.INSUFFICIENT);
+    expect(r.score).toBeNull();
+    expect(r.reasons.length).toBeGreaterThan(0);
   });
 
   it('only a positive tampering finding produces TAMPERED / FAKE', () => {
@@ -916,7 +926,8 @@ describe('the final verdict is binary', () => {
     // health either: it says so, rather than claiming the document is genuine.
     const blur = determineAuthenticity({ documentType: 'passport', ocr: { confidence: 0.18, rawText: '#'.repeat(40), fields: {}, vizFields: {}, mrz: null }, tampering: CLEAN_IMAGE });
     const v = finalVerdict(blur);
-    expect(v.headline).toBe(VERDICT.UNREADABLE);
+    expect(v.headline).toBe(VERDICT.ORIGINAL); // by product decision; never an accusation
+    expect(v.tampered).toBe(false);
     expect(v.regions).toEqual([]);
     expect(v.reason).toMatch(/insufficient|could not be read/i);
     expect(v.reason).not.toMatch(/no significant manipulation indicators were detected\.$/);
@@ -937,7 +948,7 @@ describe('the final verdict is binary', () => {
 
   it('carries no score, no risk and no field data', () => {
     const v = finalVerdict(analyse(passportOcr({ dateOfBirth: '2006-11-05' })));
-    expect(Object.keys(v).sort()).toEqual(['headline', 'reason', 'regions', 'tampered', 'unreadable']);
+    expect(Object.keys(v).sort()).toEqual(['headline', 'reason', 'regions', 'tampered']);
   });
 });
 
@@ -1000,25 +1011,34 @@ describe('an edited machine readable zone betrayed by its own check digit', () =
   });
 });
 
-describe('a document that could not be read is not called genuine', () => {
-  it('reports that it could not be read, rather than ORIGINAL / REAL', () => {
-    const v = finalVerdict(determineAuthenticity({ documentType: 'passport', ocr: { confidence: 0.15, rawText: '#'.repeat(30), fields: {}, vizFields: {}, mrz: null }, tampering: CLEAN_IMAGE }));
-    expect(v.headline).toBe(VERDICT.UNREADABLE);
-    expect(v.unreadable).toBe(true);
+describe('a document that could not be read', () => {
+  const unread = () => determineAuthenticity({ documentType: 'passport', ocr: { confidence: 0.15, rawText: '#'.repeat(30), fields: {}, vizFields: {}, mrz: null }, tampering: CLEAN_IMAGE });
+
+  // KNOWN TRADE-OFF, made at the product owner's instruction: the third outcome was
+  // removed, so a document that was never legible now reads ORIGINAL / REAL. A forgery
+  // presented as a photograph too poor to analyse therefore passes this screen. These
+  // tests pin the decision so it stays visible rather than being mistaken for a bug.
+  it('reads ORIGINAL / REAL on the headline, and is never an accusation', () => {
+    const v = finalVerdict(unread());
+    expect(v.headline).toBe(VERDICT.ORIGINAL);
     expect(v.tampered).toBe(false);
     expect(v.regions).toEqual([]);
+    expect(finalVerdict(determineAuthenticity({ documentType: 'passport', ocr: null, tampering: null })).headline).toBe(VERDICT.ORIGINAL);
   });
 
-  it('is not an accusation either', () => {
-    const v = finalVerdict(determineAuthenticity({ documentType: 'passport', ocr: null, tampering: null }));
-    expect(v.headline).not.toBe(VERDICT.TAMPERED);
-    expect(v.headline).toBe(VERDICT.UNREADABLE);
+  it('but the engine underneath still says it could not be read', () => {
+    const r = unread();
+    expect(r.status).toBe(AUTHENTICITY.INSUFFICIENT);
+    expect(r.short).toBe('INSUFFICIENT');
+    expect(r.score).toBeNull();
+    expect(JSON.stringify(r.reasons)).toMatch(/too unreliable|too few checks|nothing could be cross-checked/i);
   });
 
-  it('a document that WAS read and is clean still reports ORIGINAL / REAL', () => {
-    const v = finalVerdict(analyse(passportOcr()));
-    expect(v.headline).toBe(VERDICT.ORIGINAL);
-    expect(v.unreadable).toBe(false);
+  it('a document that WAS read and is clean reports ORIGINAL / REAL on real evidence', () => {
+    const r = analyse(passportOcr());
+    expect(finalVerdict(r).headline).toBe(VERDICT.ORIGINAL);
+    expect(r.status).toBe(AUTHENTICITY.ORIGINAL);
+    expect(r.coverage).toBeGreaterThanOrEqual(AUTH.ORIGINAL_COVERAGE);
   });
 });
 

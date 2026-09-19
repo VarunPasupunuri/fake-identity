@@ -118,7 +118,50 @@ function namesAgree(a, b) {
  *   page with a soft zone reads "confident" while the zone's characters are wrong, and
  *   every phantom disagreement that produces then accuses a genuine document.
  */
-export function compareRepresentations({ visual = {}, mrz = {}, barcode = {}, ocrConfidence = 1, mrzTrusted = true } = {}) {
+/** Which check digit answers for which field. Name, nationality and sex have none. */
+const MRZ_FIELD_CHECK = { documentNumber: 'mrz_doc_number', dateOfBirth: 'mrz_dob', expiryDate: 'mrz_expiry' };
+
+/**
+ * Can the zone's value for this field be believed?
+ *
+ * A field that carries its own check digit answers for itself: a digit that verifies
+ * means those characters were read correctly, so a page that disagrees with them is
+ * evidence, and a digit that failed means they were not, so a disagreement about that
+ * field is a misread. Zone-wide trust is too coarse for this — a zone can read well
+ * enough overall to be trusted while one field is still wrong, which is exactly the
+ * case that produced a FAKE verdict on an untampered passport.
+ */
+const toMrzDate = (iso) => (/^\d{4}-\d{2}-\d{2}$/.test(String(iso)) ? String(iso).slice(2).replace(/-/g, '') : null);
+const toMrzDocNumber = (s) => String(s).toUpperCase().replace(/\s/g, '').padEnd(9, '<').slice(0, 9);
+
+/**
+ * Does the PRINTED value satisfy the zone's own check digit for this field?
+ *
+ * The digit is a single character and survives a soft photograph far better than the
+ * six or nine data characters it covers. So when those characters were misread, the
+ * digit still decides the question: a printed value that satisfies it is the value the
+ * issuer encoded, and one that does not contradicts the zone without depending on
+ * having read the zone's data correctly at all. This is what keeps an altered date
+ * detectable on a photograph too soft to read the zone's own digits cleanly.
+ *
+ * @returns {boolean|null} null where it cannot be tested
+ */
+function printedSatisfiesCheckDigit(key, printedRaw, mrzChecks) {
+  const own = (mrzChecks || []).find((c) => c.id === MRZ_FIELD_CHECK[key]);
+  if (!own || !/^[0-9]$/.test(String(own.actual || ''))) return null;
+  const form = key === 'documentNumber' ? toMrzDocNumber(printedRaw) : toMrzDate(printedRaw);
+  if (!form) return null;
+  return checkDigit(form) === String(own.actual);
+}
+
+function mrzFieldTrusted(key, mrzChecks, zoneTrusted) {
+  const id = MRZ_FIELD_CHECK[key];
+  if (!id) return zoneTrusted;
+  const own = (mrzChecks || []).find((c) => c.id === id);
+  return own ? Boolean(own.ok) : zoneTrusted;
+}
+
+export function compareRepresentations({ visual = {}, mrz = {}, barcode = {}, ocrConfidence = 1, mrzTrusted = true, mrzChecks = [] } = {}) {
   const indicators = [];
   const compared = [];
   const available = { [SOURCE.VISUAL]: visual || {}, [SOURCE.MRZ]: mrz || {}, [SOURCE.BARCODE]: barcode || {} };
@@ -160,7 +203,20 @@ export function compareRepresentations({ visual = {}, mrz = {}, barcode = {}, oc
     // is not lost — the checksum failure reports it, and reconstruction recovers what
     // the zone actually encoded. An altered PAGE, the common forgery, leaves the zone
     // intact and verifying, so it still compares and is still caught.
-    if (!mrzTrusted && pairs.some(([p, q]) => p.source === SOURCE.MRZ || q.source === SOURCE.MRZ)) {
+    // Where the zone's data for this field was misread, its check digit still answers:
+    // a printed value that fails it contradicts the zone regardless, and that is real
+    // evidence, so only a value that satisfies it (or cannot be tested) is set aside.
+    const fieldTrusted = mrzFieldTrusted(spec.key, mrzChecks, mrzTrusted);
+    const digitVerdict = fieldTrusted
+      ? null
+      : printedSatisfiesCheckDigit(spec.key, present.find((v) => v.source === SOURCE.VISUAL)?.raw, mrzChecks);
+    // The digit may only accuse where the zone AROUND it reads soundly. In a zone that
+    // is largely garbage the digit character is no more trustworthy than the data it
+    // covers, and letting it convict there turns a badly photographed page into a
+    // forgery. Where most of the zone verifies, a digit that the printed value fails is
+    // real evidence — and it is what catches an altered date on a soft photograph.
+    const digitAccuses = digitVerdict === false && mrzTrusted;
+    if (!fieldTrusted && !digitAccuses && pairs.some(([p, q]) => p.source === SOURCE.MRZ || q.source === SOURCE.MRZ)) {
       compared[compared.length - 1] = {
         field: spec.key, label: spec.label, status: 'not_compared',
         reason: 'The machine readable zone did not verify its own check digits, so its value for this field is not reliable enough to compare against the page.',
@@ -195,7 +251,7 @@ export function compareRepresentations({ visual = {}, mrz = {}, barcode = {}, oc
       // still raises it, which is how a genuinely altered zone is caught.
       confidence: Math.max(0.35, Math.min(1, ocrConfidence))
         * (extra ? 1 : 0.95)
-        * (!mrzTrusted && present.some((v) => v.source === SOURCE.MRZ) ? 0.5 : 1),
+        * (!mrzFieldTrusted(spec.key, mrzChecks, mrzTrusted) && present.some((v) => v.source === SOURCE.MRZ) ? 0.5 : 1),
     }));
   }
 
