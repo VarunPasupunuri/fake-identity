@@ -7,6 +7,13 @@
 import { parseFields } from './parse.js';
 import { extractMrzLines, parseMrz } from '../validation/mrz.js';
 import { cropBand, rotateDataUrl } from '../../lib/image.js';
+import { getProfile } from '../documents/registry.js';
+
+/** Does this type carry a machine readable zone? An unresolved type is worth looking for one. */
+function carriesMrz(documentType) {
+  if (!documentType || documentType === 'auto') return true;
+  try { return Boolean(getProfile(documentType).mrz); } catch { return true; }
+}
 
 let workerPromise = null;
 let mrzWorkerPromise = null;
@@ -34,8 +41,26 @@ function serialised(run) {
 
 /** Characters the machine readable zone is allowed to contain. Nothing else exists there. */
 const MRZ_CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<';
-/** The band of the page the zone occupies, as a fraction of height. */
-const MRZ_BAND = { top: 0.62, height: 0.38, scale: 2, enhance: true };
+/**
+ * Bands to look for the zone in, as fractions of image height, tried in order.
+ *
+ * A single fixed strip only works when the data page fills the frame. It usually
+ * does not: a passport photographed on a desk carries surrounding background, and
+ * an open booklet puts the data page in half the frame with the zone somewhere in
+ * the middle. The zone was then never inside the one strip that was read, so it
+ * was never found — and without it a passport has nothing to cross-check its
+ * printed fields against, which is most of what this analysis is.
+ *
+ * Ordered by how often each holds the zone, and the search stops at the first
+ * well-formed result, so the common tight crop still costs one pass.
+ */
+const MRZ_BANDS = [
+  { top: 0.62, height: 0.38, scale: 2, enhance: true }, // tight crop of the data page
+  { top: 0.78, height: 0.22, scale: 3, enhance: true }, // zone at the very foot, enlarged further
+  { top: 0.45, height: 0.35, scale: 2, enhance: true }, // open booklet: data page in the upper half
+  { top: 0.50, height: 0.50, scale: 2, enhance: true }, // generous lower half
+  { top: 0.00, height: 1.00, scale: 2, enhance: true }, // whole page, restricted alphabet
+];
 /**
  * Quarter turns to try, in order. Upright first, because most captures are.
  * Then the two sideways turns, which is how a page photographed with the phone
@@ -103,16 +128,28 @@ async function getMrzWorker() {
  * Returns the recognised text, or '' if the pass could not run — a failure here
  * is never fatal, it only means the document is judged without the zone.
  */
-async function readMrzBand(imageDataUrl, onProgress) {
+async function readMrzBand(imageDataUrl, region, onProgress) {
   try {
     onProgress?.(0.9, 'Reading machine readable zone');
-    const band = await cropBand(imageDataUrl, MRZ_BAND);
+    const band = await cropBand(imageDataUrl, region);
     const worker = await getMrzWorker();
     const { data } = await serialised(() => worker.recognize(band));
     return data.text || '';
   } catch {
     return '';
   }
+}
+
+/**
+ * Hunt for the zone across the candidate bands of one image.
+ * @returns {Promise<Object|null>} the parsed zone, or null if no band held one
+ */
+async function findMrz(imageDataUrl, regions, onProgress) {
+  for (const region of regions) {
+    const found = extractMrzLines(await readMrzBand(imageDataUrl, region, onProgress));
+    if (found) return found;
+  }
+  return null;
 }
 
 /**
@@ -162,19 +199,22 @@ export async function extract({ imageDataUrl, documentType = 'passport', onProgr
   // each satisfies. On an altered document the true zone FAILS its digits — that
   // failure IS the finding — so preferring the reading that verifies would prefer
   // corruption to the truth on exactly the documents this exists to catch.
-  const bands = [];
-  if (best.image) bands.push(best.image);
+  // A document with no zone must not pay for the hunt: one look at the usual strip
+  // is what it costs today, and finding nothing there is the correct answer for it.
+  const regions = carriesMrz(documentType) ? MRZ_BANDS : MRZ_BANDS.slice(0, 1);
+  const candidates = [];
+  if (best.image) candidates.push({ image: best.image, regions });
   // Where no orientation yielded a zone, the page may still be sideways and `best`
   // merely the least bad guess. The foot of the page is then a different edge in
-  // each turn, so each is offered its own look at the band.
+  // each turn, so each is offered its own look at the usual strip.
   if (!pageMrz) {
     for (const degrees of ORIENTATIONS) {
       if (degrees === best.degrees) continue;
-      try { bands.push(await rotateDataUrl(imageDataUrl, degrees)); } catch { /* skip */ }
+      try { candidates.push({ image: await rotateDataUrl(imageDataUrl, degrees), regions: regions.slice(0, 1) }); } catch { /* skip */ }
     }
   }
-  for (const band of bands) {
-    const fromBand = extractMrzLines(await readMrzBand(band, onProgress));
+  for (const c of candidates) {
+    const fromBand = await findMrz(c.image, c.regions, onProgress);
     if (fromBand) { mrz = fromBand; break; }
   }
 

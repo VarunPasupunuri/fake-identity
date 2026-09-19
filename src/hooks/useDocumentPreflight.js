@@ -29,6 +29,18 @@ export function useDocumentPreflight({ providers, useMock, scenario, mockDocumen
   const reset = useCallback(() => { cache.current = IDLE; runId.current += 1; pending.current = null; setState(IDLE.state); setResult(null); }, []);
 
   /**
+   * The key this image's OCR is cached under. Both the store and the handoff to the
+   * pipeline must derive it the same way; computing it in two places let them drift,
+   * and the handoff then silently missed every time, costing a second recognition.
+   * In sample mode the scenario changes the text, so it belongs in the key.
+   */
+  const cacheKeyFor = useCallback((image) => {
+    const k = image?.analysisUrl || image?.dataUrl;
+    if (!k) return null;
+    return useMock ? `${k}::${scenario}` : k;
+  }, [useMock, scenario]);
+
+  /**
    * Check one image against the selected type. Re-checking the same image with a
    * different selection reuses the cached OCR — the comparison is pure.
    * @returns {Promise<Object|null>} the preflight result
@@ -41,8 +53,7 @@ export function useDocumentPreflight({ providers, useMock, scenario, mockDocumen
     // as the text, and the pipeline reuses this pass rather than repeating it, so
     // reading a smaller image here would quietly downgrade the whole screening.
     const key = image.analysisUrl || image.dataUrl;
-    // In mock mode, the scenario affects the OCR result, so include it in the cache key
-    const cacheKey = useMock ? `${key}::${scenario}` : key;
+    const cacheKey = cacheKeyFor(image);
     const sel = resolveSelection(selected);
 
     // Same image, already recognised → only the comparison needs redoing.
@@ -81,7 +92,7 @@ export function useDocumentPreflight({ providers, useMock, scenario, mockDocumen
       setResult(r); setState('error');
       return r;
     }
-  }, [providers?.ocr, useMock, scenario, mockDocument, reset]);
+  }, [providers?.ocr, useMock, scenario, mockDocument, reset, cacheKeyFor]);
 
   /** Run the check, keeping the promise so a caller can wait for it. */
   const check = useCallback((image, selected) => {
@@ -104,9 +115,9 @@ export function useDocumentPreflight({ providers, useMock, scenario, mockDocumen
 
   /** The OCR output for the checked image, so the pipeline does not recognise it twice. */
   const takeOcr = useCallback((image) => {
-    const k = image?.analysisUrl || image?.dataUrl;
+    const k = cacheKeyFor(image);
     return k && cache.current.imageKey === k ? cache.current.ocr : null;
-  }, []);
+  }, [cacheKeyFor]);
 
   return { state, result, check, settle, reset, takeOcr, blocking: Boolean(result?.blocking) };
 }
